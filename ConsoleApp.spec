@@ -3,7 +3,7 @@
 block_cipher = None
 
 
-a = Analysis(['GUI.py'],
+a = Analysis(['main.py'],
              pathex=['C:\\Users\\Fabio.Magrotti.CSI\\PycharmProjects\\PDFSplitter'],
              binaries=[],
              datas=[],
@@ -30,4 +30,4 @@ exe = EXE(pyz,
           upx=True,
           upx_exclude=[],
           runtime_tmpdir=None,
-          console=False , icon='config_files\\imgs\\Cat.ico')
+          console=True , icon='confg_files\imgs\Cat.ico')
