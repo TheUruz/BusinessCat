@@ -1,6 +1,7 @@
 venv/*
 .idea/*
 lib/__pycache__/*
+components/__pycache__/*
 config_files/imgs/paws/5452.png
 config_files/imgs/paws/paw_1.png
 config_files/imgs/paws/paw_10.png
