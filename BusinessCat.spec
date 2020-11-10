@@ -3,7 +3,7 @@
 block_cipher = None
 
 
-a = Analysis(['GUI.py'],
+a = Analysis(['components\main.py'],
              pathex=['C:\\Users\\Fabio.Magrotti.CSI\\PycharmProjects\\PDFSplitter'],
              binaries=[],
              datas=[],
