@@ -1,4 +1,7 @@
-# BusinessCat
+
+<p align="center"><img width="200" height="250" src="https://github.com/TheUruz/BusinessCat/blob/main/config_files/imgs/BusinessCat.png?raw=true"/></p>
+<p align="center" style="font-family:Calibri,serif; font-size:28px; font-weight:900; color:#ff9632">BusinessCat</p>
+
 Split your company paychecks and badges with ease!
 
 Thank you for visiting my little project! i am a python newbie and enthusiast and i'm trying to develepo a little program by myself to help me in my everyday life at my office.
