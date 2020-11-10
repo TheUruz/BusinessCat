@@ -1,2 +1,13 @@
 venv/*
 .idea/*
+lib/__pycache__/*
+config_files/imgs/paws/5452.png
+config_files/imgs/paws/paw_1.png
+config_files/imgs/paws/paw_10.png
+config_files/imgs/paws/paw_2.png
+config_files/imgs/paws/paw_4.png
+config_files/imgs/paws/paw_5.png
+config_files/imgs/paws/paw_6.png
+config_files/imgs/paws/paw_7.png
+config_files/imgs/paws/paw_8.png
+config_files/imgs/paws/paw_9.png

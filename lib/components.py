@@ -1,5 +1,8 @@
 from lib import appLib
 import os
+import uuid
+import hashlib
+import json
 from threading import Thread
 from tkinter import *
 from tkinter import filedialog
@@ -24,7 +27,6 @@ class Custom_Toplevel(Toplevel):
     def close(self, master):
         if messagebox.askokcancel("Esci", "Vuoi davvero uscire da BusinessCat?"):
             master.destroy()
-
 
 class Login_Window(Custom_Toplevel):
     def __init__(self, master=None):
@@ -51,14 +53,14 @@ class Login_Window(Custom_Toplevel):
 
         # define email label and textbox
         self.email_label = Label(self.mainframe, text="Email:", font=("Calibri", 11, "bold"), bg=appLib.default_background)
-        self.email_textbox = Entry(self.mainframe, width=44, bg=appLib.color_light_orange)
+        self.email_textbox = Entry(self.mainframe, width=44, bg=appLib.color_light_orange, justify="center")
         self.email_label.pack(anchor="center", pady=(50,0))
         self.email_textbox.pack(anchor="center")
 
 
         # define password label and textbox
         self.password_label = Label(self.mainframe, text="Password:", font=("Calibri", 11, "bold"), bg=appLib.default_background)
-        self.password_textbox = Entry(self.mainframe, width=44, bg=appLib.color_light_orange, show="*")
+        self.password_textbox = Entry(self.mainframe, width=44, bg=appLib.color_light_orange, show="*", justify="center")
         self.password_label.pack(anchor="center", pady=(45,0))
         self.password_textbox.pack(anchor="center")
 
@@ -91,12 +93,25 @@ class Login_Window(Custom_Toplevel):
 
                         cursor = auth_db.cursor()
                         cursor.execute(f"""SELECT * FROM users WHERE email = '{email}' AND pwd = '{password}'""")
+                        entry = cursor.fetchone()
 
                         # se l'utente è presente procedo altrimento errore
-                        if cursor.fetchone():
-                            self.destroy()
-                            Splitter_Window(master)
-                            print(email, password)
+                        if entry:
+
+                            valid_postation = False
+                            # verifico che il login stia avvenendo da una postazione nota
+                            for workstation in json.loads(entry[4]):
+                                if workstation == uuid.getnode():
+                                    valid_postation = True
+
+                            # se la postazione di accesso è valida entro nel programma
+                            if valid_postation:
+                                self.destroy()
+                                Splitter_Window(master)
+                                print(email, password)
+                            else:
+                                messagebox.showwarning("Access Denied", "Hai già effettuato l'accesso da tre dispositivi diversi. Contatta l'assistenza")
+
                         else:
                             raise
                     except Exception as e:
@@ -111,6 +126,143 @@ class Login_Window(Custom_Toplevel):
     def signup(self, master):
         self.destroy()
         Register_Window(master)
+
+class Register_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.height = 500
+        self.width = 500
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Registrazione")
+        self.margin = 15
+
+        ####################### GRID CONFIGURE
+        self.grid_columnconfigure(0, minsize=self.margin, weight=1)
+        self.grid_columnconfigure(1, weight=3)
+        self.grid_columnconfigure(2, minsize=self.margin, weight=1)
+
+        self.grid_rowconfigure(2, minsize=self.margin*2)
+        self.grid_rowconfigure(5, minsize=self.margin *2)
+        self.grid_rowconfigure(8, minsize=self.margin * 2)
+        self.grid_rowconfigure(11, minsize=self.margin*2.5)
+        self.grid_rowconfigure(13, minsize=self.margin * 2)
+
+
+
+        # define info_labels
+        info_text = "BusinessCat funzionerà solo sulla postazione dalla quale ti stai registrando, scegli bene la tua postazione prima di registrati!"
+        self.info_label1 = Label(self, text="ATTENZIONE", font=("Calibri", 18), fg=appLib.color_red, bg=appLib.default_background, wraplength=self.width-(self.margin*2))
+        self.info_label2 = Label(self, text=info_text, font=("Calibri", 14), fg=appLib.color_red, bg=appLib.default_background, wraplength=self.width-(self.margin*2))
+        self.info_label1.grid(row=0, column=1)
+        self.info_label2.grid(row=1, column=1)
+
+
+        # define email_label
+        self.email_label = Label(self, text="Inserisci qui la Email", font=("Calibri", 10, "bold"), bg=appLib.default_background)
+        self.email_label.grid(row=3, column=1)
+
+        # define email_txtbox
+        self.email_txtbox = Entry(self, width=60, bg=appLib.color_light_orange, justify="center")
+        self.email_txtbox.grid(row=4, column=1)
+
+
+
+        # define password_label
+        self.password1_label = Label(self, text="Inserisci qui la Password", font=("Calibri", 10, "bold"), bg=appLib.default_background)
+        self.password1_label.grid(row=6, column=1)
+
+        # define password_txtbox
+        self.password1_txtbox = Entry(self, width=60, bg=appLib.color_light_orange, show="*", justify="center")
+        self.password1_txtbox.grid(row=7, column=1)
+
+
+
+        # define repeat_password_label
+        self.password2_label = Label(self, text="Ripeti la Password", font=("Calibri", 10, "bold"), bg=appLib.default_background)
+        self.password2_label.grid(row=9, column=1)
+
+        # define repeat_password_txtbox
+        self.password2_txtbox = Entry(self, width=60, bg=appLib.color_light_orange, show="*", justify="center")
+        self.password2_txtbox.grid(row=10, column=1)
+
+
+
+        # define sing up button
+        self.signup_button = Button(self, width=15, text="REGISTRATI", bg=appLib.default_background, command= lambda: self.signup(master))
+        self.signup_button.grid(row=12, column=1)
+
+        # define "back" button frame
+        frame_width = 120
+        frame_height = 55
+        self.back_button_frame = Frame(self, width=frame_width, height=frame_height, bg=appLib.default_background)
+        self.back_button_frame.grid(row=14, column=0, columnspan=2, sticky="w")
+
+        # define "back" label
+        self.back_paw_label = Label(self.back_button_frame, text="< Torna al Login", font=("Calibri", 10, "bold"), fg=appLib.color_orange, bg=self.back_button_frame['bg'])
+        self.back_paw_label.grid(row=0)
+        self.back_paw_label.bind('<Button 1>', lambda event: self.back_to_login(master))
+
+        # define "back" paw image
+        self.paw_image = Image.open("../config_files/imgs/paws/paw_3.png")
+        self.paw_image = self.paw_image.resize((frame_height,frame_width)).rotate(270, expand=True)
+        self.paw_image = ImageTk.PhotoImage(self.paw_image)
+        self.back_paw_image = Label(self.back_button_frame, image=self.paw_image, bg=appLib.default_background, borderwidth=0)
+        self.back_paw_image.grid(row=1)
+        self.bind('<Button 1>', lambda event: self.back_to_login(master))
+
+    def back_to_login(self, master):
+        self.destroy()
+        Login_Window(master)
+
+    def signup(self, master):
+        email = self.email_txtbox.get()
+        password1 = self.password1_txtbox.get()
+        password2 = self.password2_txtbox.get()
+
+        if password1 and password2 and email:
+
+            # check matching password
+            if password1 != password2:
+                messagebox.showerror("Errore password", "Le password immesse non coincidono!")
+                self.clear_fields()
+                return
+            else:
+
+                try:
+                    config = appLib.load_config()
+                    db = appLib.connect_to_db(config)
+                    cursor = db.cursor()
+
+                    already_registered = appLib.check_registered(cursor, email)
+
+                    # se la mail non è già registrata
+                    if not already_registered:
+                        user_key = uuid.uuid4()
+                        mac_address = uuid.getnode()
+                        appLib.add_user(db, cursor, email, password1, user_key, [mac_address])
+                        messagebox.showinfo("Registrato!", "La registrazione è andata a buon fine, sarai reindirizzato alla finestra per il login!")
+                        self.clear_fields(clear_email=True)
+
+                        #ritorna al login
+                        self.destroy()
+                        Login_Window(master)
+
+                    else:
+                        messagebox.showwarning("Già registrato!", "La mail risulta già utilizzata!")
+
+                except:
+                    raise Exception("Errore registrazione non riuscita")
+
+        else:
+            messagebox.showerror("Dati mancanti", "tutti i campi sono obbligatori")
+
+    def clear_fields(self, clear_email=False):
+        self.password1_txtbox.delete(0, 'end')
+        self.password2_txtbox.delete(0, 'end')
+
+        if clear_email:
+            self.email_txtbox.delete(0, 'end')
 
 class Splitter_Window(Custom_Toplevel):
     def __init__(self, master=None):
@@ -267,112 +419,6 @@ class Splitter_Window(Custom_Toplevel):
         # creating a thread preventing the program to freeze during the loop
         Thread(target=self.splitting).start()
 
-class Register_Window(Custom_Toplevel):
-    def __init__(self, master=None):
-        self.height = 450
-        self.width = 500
-        super().__init__(master, self.width, self.height)
-
-        self.config(bg=appLib.default_background)
-        self.title(self.title().split("-")[:1][0] + " - " + "Registrazione")
-        self.margin = 15
-
-        ####################### GRID CONFIGURE
-        self.grid_columnconfigure(0, minsize=self.margin, weight=1)
-        self.grid_columnconfigure(1, weight=3)
-        self.grid_columnconfigure(2, minsize=self.margin, weight=1)
-
-        self.grid_rowconfigure(2, minsize=self.margin*2)
-        self.grid_rowconfigure(5, minsize=self.margin *2)
-        self.grid_rowconfigure(8, minsize=self.margin * 2)
-        self.grid_rowconfigure(11, minsize=self.margin*2.5)
-
-
-        # define info_labels
-        info_text = "BusinessCat funzionerà solo sulla postazione dalla quale ti stai registrando, scegli bene la tua postazione prima di registrati!"
-        self.info_label1 = Label(self, text="ATTENZIONE", font=("Calibri", 18), fg=appLib.color_red, bg=appLib.default_background, wraplength=self.width-(self.margin*2))
-        self.info_label2 = Label(self, text=info_text, font=("Calibri", 14), fg=appLib.color_red, bg=appLib.default_background, wraplength=self.width-(self.margin*2))
-        self.info_label1.grid(row=0, column=1)
-        self.info_label2.grid(row=1, column=1)
-
-
-        # define email_label
-        self.email_label = Label(self, text="Inserisci qui la Email", font=("Calibri", 10, "bold"), bg=appLib.default_background)
-        self.email_label.grid(row=3, column=1)
-
-        # define email_txtbox
-        self.email_txtbox = Entry(self, width=60, bg=appLib.color_light_orange, justify="center")
-        self.email_txtbox.grid(row=4, column=1)
-
-
-
-        # define password_label
-        self.password1_label = Label(self, text="Inserisci qui la Password", font=("Calibri", 10, "bold"), bg=appLib.default_background)
-        self.password1_label.grid(row=6, column=1)
-
-        # define password_txtbox
-        self.password1_txtbox = Entry(self, width=60, bg=appLib.color_light_orange, show="*", justify="center")
-        self.password1_txtbox.grid(row=7, column=1)
-
-
-
-        # define repeat_password_label
-        self.password2_label = Label(self, text="Ripeti la Password", font=("Calibri", 10, "bold"), bg=appLib.default_background)
-        self.password2_label.grid(row=9, column=1)
-
-        # define repeat_password_txtbox
-        self.password2_txtbox = Entry(self, width=60, bg=appLib.color_light_orange, show="*", justify="center")
-        self.password2_txtbox.grid(row=10, column=1)
-
-
-
-        # define sing up button
-        self.signup_button = Button(self, width=15, text="REGISTRATI", bg=appLib.default_background, command=self.signup)
-        self.signup_button.grid(row=12, column=1)
-
-
-    def signup(self):
-        email = self.email_txtbox.get()
-        password1 = self.password1_txtbox.get()
-        password2 = self.password2_txtbox.get()
-
-        if password1 and password2 and email:
-
-            # check matching password
-            if password1 != password2:
-                messagebox.showerror("Errore password", "Le password immesse non coincidono!")
-                self.clear_fields()
-                return
-            else:
-
-                try:
-                    config = appLib.load_config()
-                    db = appLib.connect_to_db(config)
-                    cursor = db.cursor()
-
-                    already_registered = appLib.check_registered(cursor, email)
-
-                    # se la mail non è già registrata
-                    if not already_registered:
-                        appLib.add_user(db, cursor, email, password1, "asdf-asdf", [])
-                        messagebox.showinfo("Registrato!", "La registrazione è andata a buon fine, sarai reindirizzato alla finestra per il login!")
-                        self.clear_fields(clear_email=True)
-                    else:
-                        messagebox.showwarning("Già registrato!", "La mail risulta già utilizzata!")
-
-                except:
-                    raise Exception("Errore registrazione non riuscita")
-
-        else:
-            messagebox.showerror("Dati mancanti", "tutti i campi sono obbligatori")
-
-    def clear_fields(self, clear_email=False):
-        self.password1_txtbox.delete(0, 'end')
-        self.password2_txtbox.delete(0, 'end')
-
-        if clear_email:
-            self.email_txtbox.delete(0, 'end')
-
 
 
 if __name__ == "__main__":
@@ -383,5 +429,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Login_Window(root)
+    app = Register_Window(root)
     app.mainloop()
