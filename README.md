@@ -2,7 +2,7 @@
 <p align="center"><img width="150" height="160" src="https://github.com/TheUruz/BusinessCat/blob/main/config_files/imgs/BusinessCat.png?raw=true"/></p>
 <p align="center" style="font-family:Calibri,serif; font-size:36px; font-weight:900; color:#ff9632">BusinessCat</p>
 
-<br><br><br>
+<br><br>
 
 Split your company paychecks and badges with ease!
 
