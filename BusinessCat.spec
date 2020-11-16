@@ -3,8 +3,8 @@
 block_cipher = None
 
 
-a = Analysis(['components\main.py'],
-             pathex=['C:\\Users\\Fabio.Magrotti.CSI\\PycharmProjects\\PDFSplitter'],
+a = Analysis(['lib\\components.py'],
+             pathex=['C:\\Users\\Fabio.Magrotti.CSI\\source\\repos\\BusinessCat'],
              binaries=[],
              datas=[],
              hiddenimports=[],

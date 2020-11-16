@@ -1,6 +1,5 @@
 import os
-from PyPDF2 import PdfFileWriter, PdfFileReader  # (for paychecks)
-import fitz # PyMuPDF (for badges)
+import fitz # PyMuPDF
 import json
 import mysql
 
@@ -87,51 +86,69 @@ def read_page(pageObj, lookup_interval=[]):
         return (lookup_interval, False, name)
 
 def CREATE_BUSTE(file_to_split, dirname):
-    try:
+    mesi = [
+        "gennaio",
+        "febbraio",
+        "marzo",
+        "aprile",
+        "maggio",
+        "giugno",
+        "luglio",
+        "agosto",
+        "settembre",
+        "ottobre",
+        "novembre",
+        "dicembre"
+    ]
+    inputpdf = fitz.open(file_to_split)
+    check_name = ""
 
-        inputpdf = PdfFileReader(open(file_to_split, "rb"))
-        lookup_interval = []
+    # chech if file in directory
+    if not os.path.exists(file_to_split):
+        raise Exception(f"Non ho trovato il file {file_to_split} nella mia stessa directory!")
 
-        # chech if file in directory
-        if not os.path.exists(file_to_split):
-            raise Exception(f"Non ho trovato il file {file_to_split} nella mia stessa directory!")
+    # create dir if it does not exists
+    if not os.path.exists(dirname):
+        os.mkdir(dirname)
 
-        # create dir if it does not exists
-        if not os.path.exists(dirname):
-            os.mkdir(dirname)
+    # per ogni pagina
+    for i in range(inputpdf.pageCount):
+        page = inputpdf.loadPage(i)
+        obj = page.getTextBlocks()
+        found_name = False
+        name = ""
 
-            # iterate throught pages and split them
-            for page in range(inputpdf.numPages):
-                pageObj = inputpdf.getPage(page)
+        # range in cui è possibile trovare il nome nel foglio
+        check_range = [37, 38, 39]
 
-                # gestisco le iterazioni
-                if lookup_interval:
-                    lookup_interval, matching, name = read_page(pageObj, lookup_interval)
+        # loop sulle pagine
+        for x in check_range:
+            check = obj[x]
+            name = check[4].split('\n')[1].lower()
+
+            if name:
+                if name[0] == ' ' or name[0].isdigit() and name[0].lower() in mesi:
+                    continue
                 else:
-                    lookup_interval, matching, name = read_page(pageObj)
+                    found_name = True
+                    break
 
-                '''
-                lookup interval - (intervallo col nome appena letto da paragonare col prossimo foglio)
-                matching - (un nome in caso di match affermativo o None in caso di foglio singolo)
-                '''
+        # se dopo aver loopato i tre possibili slot col nome non ne trova nessuno raiso errore
+        if not found_name:
+            raise Exception(f"non ho trovato il nome del proprietario della busta paga nel foglio numero {i}")
+        else:
 
-                # genero il pdf
-                output = PdfFileWriter()
+            paycheck = fitz.Document()
 
-                # se matchano aggiungo all'output prima la pagina precedente
-                if matching:
-                    output.addPage(inputpdf.getPage(page - 1))
+            # se il nome è lo stesso del foglio precedente salvo il pdf come due facciate
+            if name == check_name:
+                paycheck.insertPDF(inputpdf, from_page=i - 1, to_page=i)
+            # altrimenti salvo solo la pagina corrente
+            else:
+                paycheck.insertPDF(inputpdf, from_page=i, to_page=i)
 
-                output.addPage(inputpdf.getPage(page))
-
-                with open(f"BUSTE PAGA/{name}.pdf", "wb") as outputStream:
-                    output.write(outputStream)
-
-    except:
-        os.remove(dirname)
-        raise Exception("####################################\n"
-                        "ERRORE nella generazione delle buste\n"
-                        "####################################\n")
+            check_name = name
+            paycheck.save(dirname + "/" + name + ".pdf")
 
 def CREATE_CARTELLINI(file_to_split, dirname):
     try:

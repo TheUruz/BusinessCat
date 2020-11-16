@@ -429,5 +429,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Register_Window(root)
+    app = Splitter_Window(root)
     app.mainloop()

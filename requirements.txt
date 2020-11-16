@@ -7,7 +7,6 @@ protobuf==3.13.0
 pyinstaller==4.0
 pyinstaller-hooks-contrib==2020.9
 PyMuPDF==1.18.1
-PyPDF2==1.26.0
 pywin32==228
 pywin32-ctypes==0.2.0
 six==1.15.0
