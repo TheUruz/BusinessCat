@@ -1,7 +1,9 @@
 venv/*
+.vscode/*
 .idea/*
 build/*
 dist/*
+__pycache__/*
 lib/__pycache__/*
 components/__pycache__/*
 config_files/imgs/paws/5452.png

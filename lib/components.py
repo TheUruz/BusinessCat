@@ -1,10 +1,14 @@
 from lib import appLib
 import os
 import uuid
-import hashlib
 import json
+import pandas as pd
+from pandastable import Table, TableModel, config as tab_config
+from email.message import EmailMessage
+import mimetypes
+import smtplib
 from threading import Thread
-from tkinter import *
+from tkinter.tix import *
 from tkinter import filedialog
 from tkinter import messagebox
 from PIL import Image, ImageTk
@@ -419,6 +423,209 @@ class Splitter_Window(Custom_Toplevel):
         # creating a thread preventing the program to freeze during the loop
         Thread(target=self.splitting).start()
 
+class Mail_Sender_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 1200
+        self.height = 750
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Mail Sender")
+        self.margin = 15
+        self.done_paychecks, self.done_badges = self.verify_paycheck_badges()
+        self.email = EmailMessage()
+
+
+        ############### ROW CONFIGURE
+        self.grid_rowconfigure(0, minsize=self.margin) #empty
+        self.grid_rowconfigure(2, minsize=self.margin * 3)  # empty
+        self.grid_rowconfigure(3, minsize=480)  # table and text frame
+        self.grid_rowconfigure(4, minsize=self.margin)  # empty
+
+        ############### COLUMN CONFIGURE
+        self.grid_columnconfigure(0, minsize=self.margin) #empty
+        self.grid_columnconfigure(1, weight=1) # contact table
+        self.grid_columnconfigure(2, minsize=self.margin) #empty
+        self.grid_columnconfigure(3, minsize=600, weight=1)  # text frame
+        self.grid_columnconfigure(4, minsize=self.margin) #empty
+
+
+        # define header label
+        h = "Digita le informazioni di contatto richieste per ogni contatto oppure importa i contatti da un file Excel"
+        self.header = Label(self, text=h, font=("Calibri", 13, "bold"), width=self.width, fg=appLib.color_orange, bg=appLib.default_background)
+        self.header.grid(row=1, column=0, columnspan=4)
+
+        # define excel import
+        self.xls_logo = Image.open("../config_files/imgs/xlsx_logo.ico")
+        self.xls_logo = self.xls_logo.resize((28,28))
+        self.xls_logo = ImageTk.PhotoImage(self.xls_logo)
+        self.excel_label = Label(self, image=self.xls_logo, font=("Calibri", 8, "bold"), bg=appLib.default_background)
+        self.excel_label.grid(row=2, column=1, sticky=W)
+        self.excel_label.bind('<Button 1>', lambda event: self.import_Excel())
+        self.xls_baloon = Balloon(self)
+        self.xls_baloon.bind_widget(self.excel_label, balloonmsg="Importa da file Excel")
+
+
+        # define contact table
+        cfg = {
+            'align': 'w',
+            'cellbackgr': appLib.default_background,
+            'cellwidth': 100,
+            'colheadercolor': appLib.color_orange,
+            'floatprecision': 2,
+            'font': 'Calibri',
+            'fontsize': 12,
+            'fontstyle': '',
+            'grid_color': '#ABB1AD',
+            'linewidth': 1,
+            'rowheight': 22,
+            'rowselectedcolor': appLib.color_light_orange,
+            'textcolor': 'black'
+        }
+        self.table_frame = Frame(self, bg=appLib.default_background)
+        self.table_frame.grid(row=3, column=1, sticky="nsew")
+        self.table = Table(self.table_frame)
+        tab_config.apply_options(cfg, self.table)
+
+        self.table.model.df = pd.DataFrame(index=[x for x in range(100)], columns = ['COGNOME', 'NOME', 'EMAIL'])
+        self.table.columnwidths["EMAIL"] = 350
+        self.table.show()
+
+
+        # define Entry box
+        self.mail_text_frame = Text(self, bg=appLib.default_background, font=("Calibri", 12))
+        self.mail_text_frame.insert(1.0, "Inserisci qui il testo della mail . . .")
+        self.mail_text_frame.grid(row=3, column=3, sticky="nsew")
+
+        # define file to send
+        self.send_label = Label(self, text="Cosa vuoi allegare ai messaggi?", font=("Calibri", 14, "bold"), bg=appLib.default_background)
+        self.send_label.grid(row=5, column=1, sticky=W)
+
+        # paycheck checkbox
+        self.paycheck_checkbox = Checkbutton(self, text="Buste paga", font=("Calibri", 12), bg=appLib.default_background)
+        self.paycheck_checkbox.grid(row=6, column=1, sticky=W)
+
+        if not self.done_paychecks:
+            self.paycheck_checkbox.configure(state=DISABLED)
+
+        # badges checkbox
+        self.badges_checkbox = Checkbutton(self, text="Cartellini", font=("Calibri", 12), bg=appLib.default_background)
+        self.badges_checkbox.grid(row=7, column=1, sticky=W, pady=(0,10))
+
+        if not self.done_badges:
+            self.badges_checkbox.configure(state=DISABLED)
+
+        # other attachment
+        self.other_attachment = Button(self, text="Allega un altro file", font=("Calibri", 10, "bold"), width=30, bg=appLib.color_light_orange, command=self.attach_to_mail)
+        self.other_attachment.grid(row=8, column=1, sticky=W)
+
+        # send email button
+        self.send_email_button = Button(self, text="Invia Email", font=("Calibri", 12, "bold"), bg=appLib.color_light_orange, command=self.attach_to_mail)
+        self.send_email_button.grid(row=5, column=3, sticky="nsew")
+
+        # check attachment
+        self.check_attachments_button = Button(self, text=" Visualizza allegati", font=("Calibri", 10, "bold"), bg=appLib.color_light_orange, width=30, command=self.check_attachments)
+        self.check_attachments_button.grid(row=8, column=1, sticky="E")
+
+        # status circle
+        self.canvas_frame = Frame(self)
+        self.canvas_frame.grid(row=6, column=3, rowspan=2, sticky="nsew")
+        self.canvas = Canvas(self.canvas_frame, width= self.canvas_frame.winfo_width(), height=self.canvas_frame.winfo_height(), highlightthickness=0, bg=appLib.default_background)
+        self.canvas.pack(fill="both" ,expand=True)
+        self.canvas_frame.update()
+        raggio = 20
+        top_left_coord = [self.canvas_frame.winfo_width()/2 - raggio, 15]
+        bottom_right_coord = [self.canvas_frame.winfo_width()/2 + raggio, self.canvas_frame.winfo_height() - 15]
+        self.status_circle = self.canvas.create_oval(top_left_coord, bottom_right_coord, outline="", fill=appLib.color_green)
+        self.circle_label = Label(self, text="Pronto", font=("Calibri", 14, "bold"), fg=appLib.color_green, bg=appLib.default_background)
+        self.circle_label.grid(row=8, column=3)
+
+
+    def verify_paycheck_badges(self):
+
+        done_paychecks = True if os.path.exists("BUSTE PAGA") else False
+        done_badges = True if os.path.exists("CARTELLINI") else False
+
+        return (done_paychecks, done_badges)
+
+    def attach_to_mail(self):
+        filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",filetype=[("File", "*.*")])
+        with open(filename, "rb") as f:
+            file_data = f.read()
+            file_type = mimetypes.guess_type(filename)[0].split("/")
+            file_name = f.name.split('/')[-1]
+            maintype = file_type[0]
+            subtype = file_type[1]
+            self.email.add_attachment(file_data, maintype=maintype, subtype=subtype, filename=file_name)
+            messagebox.showinfo("Attachment success", f"File allegato con successo\n\n{f.name}")
+
+    def check_attachments(self):
+        attachments = [x.get_filename() for x in self.email.iter_attachments()]
+
+        att_window = Toplevel(self, bg=appLib.default_background)
+        att_window.title("Attachments")
+        att_window.minsize(width=350, height=150)
+        att_window.resizable(False, False)
+
+        if attachments:
+            top_text = Label(att_window, text="Questi sono i file che hai allegato:", font=("Calibri", 14), fg=appLib.color_orange, bg= appLib.default_background)
+            top_text.pack(expand=1, fill=BOTH)
+        else:
+            att_window.minsize(width=350, height=50)
+            Label(att_window, text="Lista allegati vuota", font=("Calibri", 12), bg=appLib.default_background).pack(fill=Y, expand=True)
+
+        for a in attachments:
+            text = Label(att_window, text=a, font=("Calibri", 12), bg=appLib.default_background)
+            text.pack(pady=(0,5))
+
+        return attachments
+
+    def import_Excel(self, filename=None):
+        if filename == None:
+            filename = filedialog.askopenfilename(parent=self.master, initialdir=os.getcwd(), filetypes=[("xls","*.xls"),("xlsx","*.xlsx")])
+        if not filename:
+            return
+        to_return = pd.DataFrame()
+        df = pd.read_excel(filename)
+
+        # column names we want to identify in imported Excel
+        keep_column = [
+            "COGNOME",
+            "NOME",
+            "EMAIL",
+        ]
+
+        # create imported dataframe
+        for column in df.columns.values:
+            if column.upper() in keep_column:
+                to_return[column.upper()] = df[column]
+
+        # check if dataframe is valid
+        for column in keep_column:
+            if not column in to_return:
+                messagebox.showerror("Bad Data", "il file Excel non è conforme al formato richiesto")
+                return
+
+        # if excel is fine then update model
+        model = TableModel(dataframe=to_return)
+        self.table.updateModel(model)
+        self.table.redraw()
+        return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -429,5 +636,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Splitter_Window(root)
+    app = Mail_Sender_Window(root)
     app.mainloop()
