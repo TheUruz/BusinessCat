@@ -1,5 +1,6 @@
 from lib import appLib
 import os
+import copy
 import uuid
 import json
 import pandas as pd
@@ -7,7 +8,6 @@ from pandastable import Table, TableModel, config as tab_config
 from email.message import EmailMessage
 import mimetypes
 import smtplib
-from threading import Thread
 from tkinter.tix import *
 from tkinter import filedialog
 from tkinter import messagebox
@@ -234,7 +234,7 @@ class Register_Window(Custom_Toplevel):
             else:
 
                 try:
-                    config = appLib.load_config()
+                    config = appLib.load_db_config()
                     db = appLib.connect_to_db(config)
                     cursor = db.cursor()
 
@@ -330,7 +330,7 @@ class Splitter_Window(Custom_Toplevel):
         command_buttons_height = 295
 
         # define START button
-        button_START = Button(self.canvas, text = "Dividi", width = 10, height = 1, command=self.START)
+        button_START = Button(self.canvas, text = "Dividi", width = 10, height = 1, command=lambda:appLib.START_in_Thread(self.splitting))
         self.canvas.create_window((self.width/4 + 50), command_buttons_height, window=button_START)
 
         # define CLEAR button
@@ -419,10 +419,6 @@ class Splitter_Window(Custom_Toplevel):
             done_paycheck = False
             done_badges = False
 
-    def START(self):
-        # creating a thread preventing the program to freeze during the loop
-        Thread(target=self.splitting).start()
-
 class Mail_Sender_Window(Custom_Toplevel):
     def __init__(self, master=None):
         self.width = 1200
@@ -453,7 +449,7 @@ class Mail_Sender_Window(Custom_Toplevel):
         # define header label
         h = "Digita le informazioni di contatto richieste per ogni contatto oppure importa i contatti da un file Excel"
         self.header = Label(self, text=h, font=("Calibri", 13, "bold"), width=self.width, fg=appLib.color_orange, bg=appLib.default_background)
-        self.header.grid(row=1, column=0, columnspan=4)
+        self.header.grid(row=1, column=0, columnspan=4, pady=(0,10))
 
         # define excel import
         self.xls_logo = Image.open("../config_files/imgs/xlsx_logo.ico")
@@ -464,6 +460,11 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.excel_label.bind('<Button 1>', lambda event: self.import_Excel())
         self.xls_baloon = Balloon(self)
         self.xls_baloon.bind_widget(self.excel_label, balloonmsg="Importa da file Excel")
+
+        # define mail title textbox
+        self.mail_title_txtbox = Entry(self, bg=appLib.default_background, font=("Calibri", 10))
+        self.mail_title_txtbox.insert(0, "Titolo")
+        self.mail_title_txtbox.grid(row=2, column=3, sticky="nsew", pady=(10,10))
 
 
         # define contact table
@@ -493,7 +494,7 @@ class Mail_Sender_Window(Custom_Toplevel):
 
 
         # define Entry box
-        self.mail_text_frame = Text(self, bg=appLib.default_background, font=("Calibri", 12))
+        self.mail_text_frame = Text(self, bg=appLib.default_background, font=("Calibri", 10))
         self.mail_text_frame.insert(1.0, "Inserisci qui il testo della mail . . .")
         self.mail_text_frame.grid(row=3, column=3, sticky="nsew")
 
@@ -502,14 +503,16 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.send_label.grid(row=5, column=1, sticky=W)
 
         # paycheck checkbox
-        self.paycheck_checkbox = Checkbutton(self, text="Buste paga", font=("Calibri", 12), bg=appLib.default_background)
+        self.paycheck_var = IntVar()
+        self.paycheck_checkbox = Checkbutton(self, text="Buste paga", font=("Calibri", 12), bg=appLib.default_background, variable=self.paycheck_var)
         self.paycheck_checkbox.grid(row=6, column=1, sticky=W)
 
         if not self.done_paychecks:
             self.paycheck_checkbox.configure(state=DISABLED)
 
         # badges checkbox
-        self.badges_checkbox = Checkbutton(self, text="Cartellini", font=("Calibri", 12), bg=appLib.default_background)
+        self.badges_var = IntVar()
+        self.badges_checkbox = Checkbutton(self, text="Cartellini", font=("Calibri", 12), bg=appLib.default_background, variable=self.badges_var)
         self.badges_checkbox.grid(row=7, column=1, sticky=W, pady=(0,10))
 
         if not self.done_badges:
@@ -520,7 +523,7 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.other_attachment.grid(row=8, column=1, sticky=W)
 
         # send email button
-        self.send_email_button = Button(self, text="Invia Email", font=("Calibri", 12, "bold"), bg=appLib.color_light_orange, command=self.attach_to_mail)
+        self.send_email_button = Button(self, text="Invia Email", font=("Calibri", 12, "bold"), bg=appLib.color_light_orange, command=lambda:appLib.START_in_Thread(self.send_mail))
         self.send_email_button.grid(row=5, column=3, sticky="nsew")
 
         # check attachment
@@ -582,7 +585,7 @@ class Mail_Sender_Window(Custom_Toplevel):
 
     def import_Excel(self, filename=None):
         if filename == None:
-            filename = filedialog.askopenfilename(parent=self.master, initialdir=os.getcwd(), filetypes=[("xls","*.xls"),("xlsx","*.xlsx")])
+            filename = filedialog.askopenfilename(parent=self.master, initialdir=os.getcwd(), filetypes=[("xlsx","*.xlsx"),("xls","*.xls")])
         if not filename:
             return
         to_return = pd.DataFrame()
@@ -612,16 +615,91 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.table.redraw()
         return
 
+    def send_mail(self):
+        connection = appLib.connect_to_mail_server()
 
+        try:
+            # setting status circle and label
+            self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
+            self.circle_label.config(text="Sto Inviando...", fg=appLib.color_yellow)
 
+            # parsing attachments path
+            ATTACHMENTS_PATH = []
+            if self.paycheck_var.get():
+                ATTACHMENTS_PATH.append("BUSTE PAGA")
+            if self.badges_var.get():
+                ATTACHMENTS_PATH.append("CARTELLINI")
 
+            # get mail title
+            mail_title = self.mail_title_txtbox.get()
+            if mail_title.lower().strip() == "titolo":
+                mail_title = None
 
+            # get mail text
+            mail_text = self.mail_text_frame.get("1.0",END)
+            if mail_text.lower().strip() == "inserisci qui il testo della mail . . .":
+                mail_text = ""
 
+            # setting email
+            self.email['Subject'] = mail_title
+            self.email['From'] = (appLib.load_email_server_config())['email']
+            self.email.set_content(mail_text)
 
+            # SEND MAIL TO CONTACTS
+            df = self.table.model.df
+            for row in df.iterrows():
 
+                #check row validity
+                valid = True
+                for val in row[1]:
+                    if pd.isnull(val):
+                        valid = False
 
+                if valid:
 
+                    # create a copy of the email object
+                    msg_obj = copy.deepcopy(self.email)
 
+                    msg_obj['To'] = row[1]['EMAIL'].strip()
+
+                    name = row[1]['NOME'].strip()
+                    surname = row[1]['COGNOME'].strip()
+                    full_name = f"{surname} {name}".lower()
+                    for path in ATTACHMENTS_PATH:
+                        if os.path.exists(path):
+                            rel_path = os.path.relpath(path)
+                            for f in os.listdir(rel_path):
+
+                                # check if file's owner is the one in iterating row
+                                if (f.split('.')[0]).lower() == full_name:
+
+                                    with open(rel_path + "\\" + f, 'rb') as f_d:
+                                        file_data = f_d.read()
+                                        file_name = path + ' ' + f_d.name
+                                        file_type = mimetypes.guess_type(f)[0].split("/")
+                                        maintype = file_type[0]
+                                        subtype = file_type[1]
+                                        msg_obj.add_attachment(file_data, maintype=maintype, subtype=subtype,filename=file_name)
+                        else:
+                            print(f"WARNING: cannot find attachment path: {path}")
+
+                    # send email to row contact
+                    #connection.send_message(msg_obj)
+                    print(f"SENT -> {msg_obj['To']}")
+
+            # end connection with server
+            connection.quit()
+            print(f"\n--> END CONNECTION {(appLib.load_email_server_config())['server']}")
+
+            # set status circle and label back to ready
+            self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
+            self.circle_label.config(text="Pronto", fg=appLib.color_green)
+            messagebox.showinfo("Success", "Email inviate ai contatti in lista")
+
+        except Exception as e:
+            messagebox.showerror("Errore", f"Errore riscontrato: {e}")
+            self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
+            self.circle_label.config(text="Errore", fg=appLib.color_red)
 
 
 

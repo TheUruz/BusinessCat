@@ -2,16 +2,19 @@ import os
 import fitz # PyMuPDF
 import json
 import mysql
+import smtplib
+from threading import Thread
 
 # PATHS
-config_path = "../config_files/db/config.json"
+db_config_path = "../config_files/db/config.json"
+email_config_path = "../config_files/email_service/config.json"
 logo_path = "../config_files/imgs/BusinessCat.png"
 icon_path = "../config_files/imgs/Cat.ico"
 
 # COLORS
 default_background = "#ffffff"
 color_light_orange = "#fff6e5"
-color_green = "#80ff80"
+color_green = "#009922"
 color_yellow = "#ffeb64"
 color_red = "#ff4d4d"
 color_orange = "#ff9632"
@@ -216,16 +219,47 @@ def CREATE_CARTELLINI(file_to_split, dirname):
                         "ERRORE nella generazione dei cartellini\n"
                         "#######################################\n")
 
+def START_in_Thread(process):
+    """prevent process to freeze the app upon launch"""
+    Thread(target=process).start()
+
+
+''' MAILS '''
+
+def load_email_server_config():
+    try:
+        with open(email_config_path, 'r') as f:
+            config = json.load(f)
+        return config
+    except:
+        raise Exception("Cannot find email server config file")
+
+def connect_to_mail_server():
+    config = load_email_server_config()
+    smtp = smtplib.SMTP_SSL(config['server'], config['port'], timeout=10)
+    smtp.ehlo()
+    try:
+        smtp.login(config['email'], config['password'])
+        print(f"""CONNECTED SUCCESSFULLY:\n
+        -> SERVER {config['server']}\n
+        -> PORT {config['port']}\n
+        -> USER {config['email']}\n
+        -> PWD {"*"*len(str(config['password']))}
+        """)
+    except:
+        raise Exception("Login al server non riuscito")
+
+    return smtp
 
 
 ''' DB UTILS '''
 
-def load_config():
+def load_db_config():
     try:
-        with open(config_path, "r") as f:
+        with open(db_config_path, "r") as f:
             config = json.load(f)
     except:
-        raise Exception("Cannot find config file")
+        raise Exception("Cannot find db config file")
 
     return config
 
@@ -262,3 +296,5 @@ def check_registered(cursor, email):
         already_registered = True
 
     return already_registered
+
+
