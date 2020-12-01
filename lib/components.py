@@ -27,6 +27,12 @@ class Custom_Toplevel(Toplevel):
         self.iconbitmap(appLib.icon_path)
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", lambda: self.close(master))
+        self.prior_window = None
+
+    def open_new_window(self, master, new_window):
+        self.destroy()
+        new = new_window(master)
+        new.prior_window = type(self)
 
     def close(self, master):
         if messagebox.askokcancel("Esci", "Vuoi davvero uscire da BusinessCat?"):
@@ -76,7 +82,7 @@ class Login_Window(Custom_Toplevel):
         # define signup_label
         self.signup_label = Label(self.mainframe, text="Registrati", font=("Calibri", 10), width=12, bg=appLib.default_background, fg=appLib.color_orange)
         self.signup_label.pack(anchor="center", pady=(90,0))
-        self.signup_label.bind('<Button 1>', lambda event: self.signup(master))
+        self.signup_label.bind('<Button 1>', lambda event: self.open_new_window(master, Register_Window))
 
     def check_login(self, master):
             email = str(self.email_textbox.get())
@@ -110,8 +116,7 @@ class Login_Window(Custom_Toplevel):
 
                             # se la postazione di accesso è valida entro nel programma
                             if valid_postation:
-                                self.destroy()
-                                Splitter_Window(master)
+                                self.open_new_window(master, Splitter_Window)
                                 print(email, password)
                             else:
                                 messagebox.showwarning("Access Denied", "Hai già effettuato l'accesso da tre dispositivi diversi. Contatta l'assistenza")
@@ -124,12 +129,7 @@ class Login_Window(Custom_Toplevel):
                 else:
                     messagebox.showerror("Dati mancanti", "Mancano i dati per il login!")
             else:
-                self.destroy()
-                Splitter_Window(master)
-
-    def signup(self, master):
-        self.destroy()
-        Register_Window(master)
+                self.open_new_window(master, Splitter_Window)
 
 class Register_Window(Custom_Toplevel):
     def __init__(self, master=None):
@@ -213,11 +213,7 @@ class Register_Window(Custom_Toplevel):
         self.paw_image = ImageTk.PhotoImage(self.paw_image)
         self.back_paw_image = Label(self.back_button_frame, image=self.paw_image, bg=appLib.default_background, borderwidth=0)
         self.back_paw_image.grid(row=1)
-        self.bind('<Button 1>', lambda event: self.back_to_login(master))
-
-    def back_to_login(self, master):
-        self.destroy()
-        Login_Window(master)
+        self.bind('<Button 1>', lambda event: self.open_new_window(master, Login_Window))
 
     def signup(self, master):
         email = self.email_txtbox.get()
@@ -249,8 +245,7 @@ class Register_Window(Custom_Toplevel):
                         self.clear_fields(clear_email=True)
 
                         #ritorna al login
-                        self.destroy()
-                        Login_Window(master)
+                        self.open_new_window(master, Login_Window)
 
                     else:
                         messagebox.showwarning("Già registrato!", "La mail risulta già utilizzata!")
@@ -274,9 +269,8 @@ class Splitter_Window(Custom_Toplevel):
         self.height = 420
         super().__init__(master, self.width, self.height)
 
-
-        self.done_paycheck = False
-        self.done_badges = False
+        # verify paycheck and badges status
+        self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
 
         # define Canvas
         self.canvas = Canvas(self, width = self.width, height = self.height, bg="white")
@@ -321,25 +315,33 @@ class Splitter_Window(Custom_Toplevel):
         self.canvas.create_window((self.width/4), paycheck_heights, window=self.button_explore)
 
         # define Browse Badges
-        button_explore = Button(self.canvas, text = "Scegli il file dei Cartellini", width = 20, height = 1, command = lambda:self.changeContent(self.badges_textbox))
-        self.canvas.create_window((self.width/4), badges_heights, window=button_explore)
+        self.button_explore = Button(self.canvas, text = "Scegli il file dei Cartellini", width = 20, height = 1, command = lambda:self.changeContent(self.badges_textbox))
+        self.canvas.create_window((self.width/4), badges_heights, window=self.button_explore)
 
 
 
         ################################################# START /CLEAR BUTTONS
-        command_buttons_height = 295
+        command_buttons_height = 290
 
         # define START button
-        button_START = Button(self.canvas, text = "Dividi", width = 10, height = 1, command=lambda:appLib.START_in_Thread(self.splitting))
-        self.canvas.create_window((self.width/4 + 50), command_buttons_height, window=button_START)
+        self.button_START = Button(self.canvas, text = "Dividi", width = 12, height = 1, command=lambda:appLib.START_in_Thread(self.splitting))
+        self.canvas.create_window((self.width/5), command_buttons_height, window=self.button_START)
 
         # define CLEAR button
-        button_CLEAR = Button(self.canvas, text = "Pulisci", width = 10, height = 1, command=self.clearContent)
-        self.canvas.create_window(((self.width/4 + 200)), command_buttons_height, window=button_CLEAR)
+        self.button_CLEAR = Button(self.canvas, text = "Pulisci", width = 12, height = 1, command=self.clearContent)
+        self.canvas.create_window((self.width/5 *2.5), command_buttons_height, window=self.button_CLEAR)
+
+        # define SEND button
+        self.button_SEND = Button(self.canvas, text="Invia per Email", width=12, height=1, state=DISABLED,command=lambda: self.open_new_window(master, Mail_Sender_Window))
+        self.canvas.create_window((self.width/5 *4), command_buttons_height, window=self.button_SEND)
+        self.check_send_mail()
 
     def changeContent(self, txtbox):
         filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",
                                               filetype=[("PDF files", "*.pdf*")])
+        if not filename:
+            return
+
         txtbox.configure(state='normal')
         txtbox.delete(0, "end")
         txtbox.insert(0, filename)
@@ -357,13 +359,8 @@ class Splitter_Window(Custom_Toplevel):
         paycheck_path = self.paycheck_textbox.get()
         badges_path = self.badges_textbox.get()
 
-        # check if directories exist
-        if os.path.exists("BUSTE PAGA"):
-            if len(os.listdir("BUSTE PAGA")) > 0:
-                self.done_paycheck = True
-        if os.path.exists("CARTELLINI"):
-            if len(os.listdir("CARTELLINI")) > 0:
-                self.done_badges = True
+        # verify paycheck and badges status
+        self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
 
         # se ho già generato i file printo errore
         if (self.done_paycheck and paycheck_path) and (self.done_badges and badges_path):
@@ -379,9 +376,10 @@ class Splitter_Window(Custom_Toplevel):
 
             if paycheck_path and not self.done_paycheck:
                 try:
-                    appLib.CREATE_BUSTE(paycheck_path, "BUSTE PAGA")
-                    self.paycheck_textbox.configure(disabledbackground=appLib.color_green)
-                    done_paycheck = True
+                    if len(os.listdir("BUSTE PAGA")) == 0:
+                        appLib.CREATE_BUSTE(paycheck_path, "BUSTE PAGA")
+                        self.paycheck_textbox.configure(disabledbackground=appLib.color_green)
+                        self.done_paycheck = True
                 except Exception as e:
                     self.paycheck_textbox.configure(disabledbackground=appLib.color_red)
                     self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
@@ -390,15 +388,10 @@ class Splitter_Window(Custom_Toplevel):
 
             if badges_path and not self.done_badges:
                 try:
-                    if os.path.exists("CARTELLINI"):
-                        if len(os.listdir("CARTELLINI")) == 0:
-                            appLib.CREATE_CARTELLINI(badges_path, "CARTELLINI")
-                            self.badges_textbox.configure(disabledbackground=appLib.color_green)
-                            done_badges = True
-                    else:
+                    if len(os.listdir("CARTELLINI")) == 0:
                         appLib.CREATE_CARTELLINI(badges_path, "CARTELLINI")
                         self.badges_textbox.configure(disabledbackground=appLib.color_green)
-                        done_badges = True
+                        self.done_badges = True
                 except Exception as e:
                     self.badges_textbox.configure(disabledbackground=appLib.color_red)
                     self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
@@ -416,8 +409,15 @@ class Splitter_Window(Custom_Toplevel):
             elif (self.done_paycheck and self.done_badges) and paycheck_path or badges_path:
                 messagebox.showinfo("Done", "File divisi con successo!")
 
-            done_paycheck = False
-            done_badges = False
+        # check mail send button
+        self.check_send_mail()
+
+    def check_send_mail(self):
+        if self.done_badges and self.done_paycheck:
+            self.button_SEND.config(state=ACTIVE)
+            return True
+        else:
+            return False
 
 class Mail_Sender_Window(Custom_Toplevel):
     def __init__(self, master=None):
@@ -703,9 +703,6 @@ class Mail_Sender_Window(Custom_Toplevel):
 
 
 
-
-
-
 if __name__ == "__main__":
     root = Tk()
     root.withdraw()
@@ -714,5 +711,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Mail_Sender_Window(root)
+    app = Login_Window(root)
     app.mainloop()

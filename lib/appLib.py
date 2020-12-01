@@ -223,6 +223,22 @@ def START_in_Thread(process):
     """prevent process to freeze the app upon launch"""
     Thread(target=process).start()
 
+def check_paycheck_badges():
+
+    done_paycheck = False
+    done_badges = False
+
+    if os.path.exists("BUSTE PAGA"):
+        if len(os.listdir("BUSTE PAGA")) > 0:
+            done_paycheck = True
+    if os.path.exists("CARTELLINI"):
+        if len(os.listdir("CARTELLINI")) > 0:
+            done_badges = True
+
+    check = (done_paycheck, done_badges)
+
+    return check
+
 
 ''' MAILS '''
 
