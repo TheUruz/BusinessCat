@@ -23,18 +23,25 @@ class Custom_Toplevel(Toplevel):
         self.__screen_width = master.winfo_screenwidth()
         self.__screen_height = master.winfo_screenheight()
         self.geometry(f"{self.width}x{self.height}+{int((self.__screen_width / 2 - self.width / 2))}+{int((self.__screen_height / 2 - self.height / 2))}")
-        self.title("BusinessCat - PDF Splitter")
+        self.title("BusinessCat")
         self.iconbitmap(appLib.icon_path)
         self.resizable(False, False)
-        self.protocol("WM_DELETE_WINDOW", lambda: self.close(master))
+        self.protocol("WM_DELETE_WINDOW", lambda: self._close(master))
         self.prior_window = None
 
     def open_new_window(self, master, new_window):
+        """ use this method to pass from one window to another"""
         self.destroy()
         new = new_window(master)
         new.prior_window = type(self)
 
-    def close(self, master):
+    def apply_balloon_to_widget(self, widget, text):
+        """ use this method to apply a balloon to a given widget"""
+        self.widget_balloon = Balloon(self)
+        self.widget_balloon.bind_widget(widget, balloonmsg=text)
+
+    def _close(self, master):
+        """ defining closing window behavior """
         if messagebox.askokcancel("Esci", "Vuoi davvero uscire da BusinessCat?"):
             master.destroy()
 
@@ -116,7 +123,7 @@ class Login_Window(Custom_Toplevel):
 
                             # se la postazione di accesso è valida entro nel programma
                             if valid_postation:
-                                self.open_new_window(master, Splitter_Window)
+                                self.open_new_window(master, Home_Window)
                                 print(email, password)
                             else:
                                 messagebox.showwarning("Access Denied", "Hai già effettuato l'accesso da tre dispositivi diversi. Contatta l'assistenza")
@@ -129,7 +136,7 @@ class Login_Window(Custom_Toplevel):
                 else:
                     messagebox.showerror("Dati mancanti", "Mancano i dati per il login!")
             else:
-                self.open_new_window(master, Splitter_Window)
+                self.open_new_window(master, Home_Window)
 
 class Register_Window(Custom_Toplevel):
     def __init__(self, master=None):
@@ -138,7 +145,7 @@ class Register_Window(Custom_Toplevel):
         super().__init__(master, self.width, self.height)
 
         self.config(bg=appLib.default_background)
-        self.title(self.title().split("-")[:1][0] + " - " + "Registrazione")
+        self.title(self.title().split("-")[:1][0] + " - " + "Signup")
         self.margin = 15
 
         ####################### GRID CONFIGURE
@@ -263,11 +270,61 @@ class Register_Window(Custom_Toplevel):
         if clear_email:
             self.email_txtbox.delete(0, 'end')
 
+class Home_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 600
+        self.height = 500
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Home")
+        self.margin = 15
+        self.resizable(True,True)
+
+        self.buttons_width = 20
+        self.buttons_height = 2
+        self.buttons_y_padding = 20
+
+        self.menu_background_color = "#e6e6e6"
+        self.menu_buttons_color = appLib.default_background
+
+        #### define left menu
+        self.menu_frame = Frame(self, width=200, height=self.height, highlightbackground="black", highlightthickness=0.5, bg=self.menu_background_color)
+        self.menu_frame.grid(row=0, column=0, rowspan=2, padx=(1,1), pady=(0,1))
+        self.menu_frame.pack_propagate(False)
+
+        # PDF splitter button
+        self.button1 = Button(self.menu_frame, text="PDF Splitter", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Splitter_Window))
+        self.button1.pack(anchor="center", pady=self.buttons_y_padding)
+
+        # Mail sender button
+        self.button2 = Button(self.menu_frame, text="Mail Sender", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Mail_Sender_Window))
+        self.button2.pack(anchor="center", pady=self.buttons_y_padding)
+
+        # "Back to login" Label
+        self.back_label = Label(self.menu_frame, text="<< Torna al Login", font=("Calibri", 11, "bold"), fg=appLib.color_orange, bg=self.menu_background_color)
+        self.back_label.pack(expand=True, anchor="sw", pady=self.buttons_y_padding, padx=(20,0))
+
+        #### Splashart frame
+        self.splash_frame = Frame(self, width=396, bg=appLib.color_light_orange)
+        self.splash_frame.grid(row=0, column=1, sticky="ns", padx=(1,1))
+        self.grid_rowconfigure(0, weight=1)
+        self.test_label = Label(self.splash_frame)
+
+        #### credits frame
+        self.credits_frame = Frame(self, width=396, height=20, bg=appLib.default_background)
+        self.credits_frame.grid(row=1, column=1, sticky="s", padx=(1,1), pady=(0,1))
+        self.credits_frame.pack_propagate(False)
+        self.credits_label = Label(self.credits_frame, text="Developed by CSI - Centro Servizi Industriali\tBRONI (PV) IT", font=("Calibri", 8, "bold"), bg=appLib.default_background)
+        self.credits_label.pack(fill="y", anchor="w")
+
 class Splitter_Window(Custom_Toplevel):
     def __init__(self, master=None):
         self.width = 500
         self.height = 420
         super().__init__(master, self.width, self.height)
+
+        self.title(self.title().split("-")[:1][0] + " - " + "PDF Splitter")
 
         # verify paycheck and badges status
         self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
@@ -276,13 +333,18 @@ class Splitter_Window(Custom_Toplevel):
         self.canvas = Canvas(self, width = self.width, height = self.height, bg="white")
         self.canvas.grid()
 
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
+        self.canvas.create_window(30,30, window=self.back_button)
+        self.apply_balloon_to_widget(self.back_button, text="Torna alla Home")
+
         # define Logo
         self.logo_image = PhotoImage(file=appLib.logo_path)
         self.canvas.create_image((self.width/2), 80, image=self.logo_image)
 
         # status_circle
         raggio = 10
-        x_offset = -5    # tweak x offset to move circle horizontally
+        x_offset = 0    # tweak x offset to move circle horizontally
         y_offset = 15   #tweak y offset to move circle vertically
         top_left_coord = [(self.width/2) - raggio*2, (self.height/4)*3]
         bottom_right_coord = [(self.width/2) + raggio*2, (self.height/4)*3 + raggio*4]
@@ -292,10 +354,8 @@ class Splitter_Window(Custom_Toplevel):
         bottom_right_coord[1] += y_offset
         self.status_circle = self.canvas.create_oval(top_left_coord, bottom_right_coord, outline="", fill=appLib.color_green)
 
-        # define credits
-        credits = "BusinessCat - Developed by CSI Centro Servizi Industriali - Broni (PV) Italy"
-        self.canvas.create_text((self.width/2), (self.height - 15), font="Calibri 10 bold", text=credits)
-
+        # define status label
+        self.status_label = self.canvas.create_text((self.width/2), (self.height - 30), text="Pronto", fill=appLib.color_green, font=("Calibri",12,"bold"))
 
 
         ############################################### BROWSE FILES (TXTBOXES & BUTTONS)
@@ -371,35 +431,37 @@ class Splitter_Window(Custom_Toplevel):
             messagebox.showerror("Error", "Cartellini già divisi!")
 
         else:
-            # imposto lo stato di lavoro dello status_circle
+            # imposto lo stato di lavoro dello status_circle e della status_label
             self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
+            self.canvas.itemconfig(self.status_label, fill=appLib.color_yellow, text="Sto Dividendo...")
 
             if paycheck_path and not self.done_paycheck:
                 try:
-                    if len(os.listdir("BUSTE PAGA")) == 0:
-                        appLib.CREATE_BUSTE(paycheck_path, "BUSTE PAGA")
-                        self.paycheck_textbox.configure(disabledbackground=appLib.color_green)
-                        self.done_paycheck = True
+                    appLib.CREATE_BUSTE(paycheck_path, "BUSTE PAGA")
+                    self.paycheck_textbox.configure(disabledbackground=appLib.color_green)
+                    self.done_paycheck = True
                 except Exception as e:
                     self.paycheck_textbox.configure(disabledbackground=appLib.color_red)
                     self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
+                    self.canvas.itemconfig(self.status_label, fill=appLib.color_red, text="ERRORE")
                     e = str(e).replace("#", "")
                     messagebox.showerror("Error", e)
 
             if badges_path and not self.done_badges:
                 try:
-                    if len(os.listdir("CARTELLINI")) == 0:
-                        appLib.CREATE_CARTELLINI(badges_path, "CARTELLINI")
-                        self.badges_textbox.configure(disabledbackground=appLib.color_green)
-                        self.done_badges = True
+                    appLib.CREATE_CARTELLINI(badges_path, "CARTELLINI")
+                    self.badges_textbox.configure(disabledbackground=appLib.color_green)
+                    self.done_badges = True
                 except Exception as e:
                     self.badges_textbox.configure(disabledbackground=appLib.color_red)
                     self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
+                    self.canvas.itemconfig(self.status_label, fill=appLib.color_red, text="ERRORE")
                     e = str(e).replace("#", "")
                     messagebox.showerror("Error", e)
 
             # reimposto lo stato di lavoro dello status_circle
             self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
+            self.canvas.itemconfig(self.status_label, fill=appLib.color_green, text="Pronto")
 
             # end messages
             if paycheck_path and self.done_paycheck and not self.done_badges:
@@ -451,6 +513,10 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.header = Label(self, text=h, font=("Calibri", 13, "bold"), width=self.width, fg=appLib.color_orange, bg=appLib.default_background)
         self.header.grid(row=1, column=0, columnspan=4, pady=(0,10))
 
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button.grid(row=1, column=1, sticky="w")
+
         # define excel import
         self.xls_logo = Image.open("../config_files/imgs/xlsx_logo.ico")
         self.xls_logo = self.xls_logo.resize((28,28))
@@ -458,8 +524,7 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.excel_label = Label(self, image=self.xls_logo, font=("Calibri", 8, "bold"), bg=appLib.default_background)
         self.excel_label.grid(row=2, column=1, sticky=W)
         self.excel_label.bind('<Button 1>', lambda event: self.import_Excel())
-        self.xls_baloon = Balloon(self)
-        self.xls_baloon.bind_widget(self.excel_label, balloonmsg="Importa da file Excel")
+        self.apply_balloon_to_widget(self.excel_label, text="Importa da file Excel")
 
         # define mail title textbox
         self.mail_title_txtbox = Entry(self, bg=appLib.default_background, font=("Calibri", 10))
@@ -570,16 +635,22 @@ class Mail_Sender_Window(Custom_Toplevel):
         att_window.minsize(width=350, height=150)
         att_window.resizable(False, False)
 
-        if attachments:
+        if attachments or self.paycheck_var.get() or self.badges_var.get():
             top_text = Label(att_window, text="Questi sono i file che hai allegato:", font=("Calibri", 14), fg=appLib.color_orange, bg= appLib.default_background)
             top_text.pack(expand=1, fill=BOTH)
+
+            if self.paycheck_var.get():
+                Label(att_window, text="Busta paga", font=("Calibri", 12), bg=appLib.default_background).pack(fill=Y, expand=True)
+            if self.badges_var.get():
+                Label(att_window, text="Cartellino", font=("Calibri", 12), bg=appLib.default_background).pack(fill=Y, expand=True)
+
+            for a in attachments:
+                text = Label(att_window, text=a, font=("Calibri", 12), bg=appLib.default_background)
+                text.pack(pady=(1, 1))
+
         else:
             att_window.minsize(width=350, height=50)
             Label(att_window, text="Lista allegati vuota", font=("Calibri", 12), bg=appLib.default_background).pack(fill=Y, expand=True)
-
-        for a in attachments:
-            text = Label(att_window, text=a, font=("Calibri", 12), bg=appLib.default_background)
-            text.pack(pady=(0,5))
 
         return attachments
 

@@ -15,8 +15,8 @@ icon_path = "../config_files/imgs/Cat.ico"
 default_background = "#ffffff"
 color_light_orange = "#fff6e5"
 color_green = "#009922"
-color_yellow = "#ffeb64"
-color_red = "#ff4d4d"
+color_yellow = "#ffe01a"
+color_red = "#ff3333"
 color_orange = "#ff9632"
 
 
@@ -238,6 +238,7 @@ def check_paycheck_badges():
     check = (done_paycheck, done_badges)
 
     return check
+
 
 
 ''' MAILS '''
