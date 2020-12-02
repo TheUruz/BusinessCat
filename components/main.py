@@ -6,7 +6,7 @@ if __name__ == "__main__":
     root.withdraw()
 
     # change this to False only for testing purposes
-    root.using_db = True
+    root.using_db = False
 
     # app entry point
     app = Login_Window(root)

@@ -37,8 +37,12 @@ class Custom_Toplevel(Toplevel):
 
     def apply_balloon_to_widget(self, widget, text):
         """ use this method to apply a balloon to a given widget"""
-        self.widget_balloon = Balloon(self)
+        self.widget_balloon = Balloon(self, initwait=300)
         self.widget_balloon.bind_widget(widget, balloonmsg=text)
+        self.widget_balloon.subwidget("label").forget()
+        for index, sub in enumerate(self.widget_balloon.subwidgets_all()):
+            if index != 0:
+                sub.configure(bg='#ffffcc')
 
     def _close(self, master):
         """ defining closing window behavior """
@@ -279,7 +283,6 @@ class Home_Window(Custom_Toplevel):
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Home")
         self.margin = 15
-        self.resizable(True,True)
 
         self.buttons_width = 20
         self.buttons_height = 2
@@ -301,9 +304,11 @@ class Home_Window(Custom_Toplevel):
         self.button2 = Button(self.menu_frame, text="Mail Sender", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Mail_Sender_Window))
         self.button2.pack(anchor="center", pady=self.buttons_y_padding)
 
-        # "Back to login" Label
-        self.back_label = Label(self.menu_frame, text="<< Torna al Login", font=("Calibri", 11, "bold"), fg=appLib.color_orange, bg=self.menu_background_color)
-        self.back_label.pack(expand=True, anchor="sw", pady=self.buttons_y_padding, padx=(20,0))
+        # "Back to login" Label (packed only if app is using db)
+        if master.using_db:
+            self.back_label = Label(self.menu_frame, text="<< Torna al Login", font=("Calibri", 11, "bold"), fg=appLib.color_orange, bg=self.menu_background_color)
+            self.back_label.pack(expand=True, anchor="sw", pady=self.buttons_y_padding, padx=(20,0))
+            self.back_label.bind('<Button 1>', lambda event: self.open_new_window(master, Login_Window))
 
         #### Splashart frame
         self.splash_frame = Frame(self, width=396, bg=appLib.color_light_orange)
@@ -782,5 +787,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Login_Window(root)
+    app = Home_Window(root)
     app.mainloop()
