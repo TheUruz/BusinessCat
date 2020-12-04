@@ -17,7 +17,7 @@ color_light_orange = "#fff6e5"
 color_green = "#009922"
 color_yellow = "#ffe01a"
 color_red = "#ff3333"
-color_orange = "#ff9632"
+color_orange = "#e59345"
 
 
 ''' UTILITIES '''

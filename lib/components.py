@@ -1,4 +1,5 @@
 from lib import appLib
+import PIL.Image, PIL.ImageTk
 import os
 import copy
 import uuid
@@ -8,10 +9,11 @@ from pandastable import Table, TableModel, config as tab_config
 from email.message import EmailMessage
 import mimetypes
 import smtplib
-from tkinter.tix import *
+from tkinter import *
+from ttkwidgets.frames import Balloon
 from tkinter import filedialog
 from tkinter import messagebox
-from PIL import Image, ImageTk
+
 import mysql.connector
 
 class Custom_Toplevel(Toplevel):
@@ -37,12 +39,8 @@ class Custom_Toplevel(Toplevel):
 
     def apply_balloon_to_widget(self, widget, text):
         """ use this method to apply a balloon to a given widget"""
-        self.widget_balloon = Balloon(self, initwait=300)
-        self.widget_balloon.bind_widget(widget, balloonmsg=text)
-        self.widget_balloon.subwidget("label").forget()
-        for index, sub in enumerate(self.widget_balloon.subwidgets_all()):
-            if index != 0:
-                sub.configure(bg='#ffffcc')
+        self.widget_balloon = Balloon(master=widget, text=text, timeout=1, height=100)
+
 
     def _close(self, master):
         """ defining closing window behavior """
@@ -63,8 +61,8 @@ class Login_Window(Custom_Toplevel):
 
 
         # define logo and appname
-        self.image = Image.open(appLib.logo_path)
-        self.image = ImageTk.PhotoImage(self.image)
+        self.image = PIL.Image.open(appLib.logo_path)
+        self.image = PIL.ImageTk.PhotoImage(self.image)
         self.label = Label(self.mainframe, image=self.image, bg=appLib.default_background)
         self.label.pack(fill="both", anchor="center", pady=(50,0))
 
@@ -221,7 +219,7 @@ class Register_Window(Custom_Toplevel):
         # define "back" paw image
         self.paw_image = Image.open("../config_files/imgs/paws/paw_3.png")
         self.paw_image = self.paw_image.resize((frame_height,frame_width)).rotate(270, expand=True)
-        self.paw_image = ImageTk.PhotoImage(self.paw_image)
+        self.paw_image = PIL.ImageTk.PhotoImage(self.paw_image)
         self.back_paw_image = Label(self.back_button_frame, image=self.paw_image, bg=appLib.default_background, borderwidth=0)
         self.back_paw_image.grid(row=1)
         self.bind('<Button 1>', lambda event: self.open_new_window(master, Login_Window))
@@ -288,8 +286,11 @@ class Home_Window(Custom_Toplevel):
         self.buttons_height = 2
         self.buttons_y_padding = 20
 
-        self.menu_background_color = "#e6e6e6"
-        self.menu_buttons_color = appLib.default_background
+        #self.menu_background_color = "#f2f2f2"
+        #self.menu_buttons_color = appLib.default_background
+
+        self.menu_background_color = appLib.color_light_orange
+        self.menu_buttons_color = "#cddbe5"
 
         #### define left menu
         self.menu_frame = Frame(self, width=200, height=self.height, highlightbackground="black", highlightthickness=0.5, bg=self.menu_background_color)
@@ -297,11 +298,11 @@ class Home_Window(Custom_Toplevel):
         self.menu_frame.pack_propagate(False)
 
         # PDF splitter button
-        self.button1 = Button(self.menu_frame, text="PDF Splitter", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Splitter_Window))
+        self.button1 = Button(self.menu_frame, text="PDF Splitter", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Splitter_Window))
         self.button1.pack(anchor="center", pady=self.buttons_y_padding)
 
         # Mail sender button
-        self.button2 = Button(self.menu_frame, text="Mail Sender", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Mail_Sender_Window))
+        self.button2 = Button(self.menu_frame, text="Mail Sender", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Mail_Sender_Window))
         self.button2.pack(anchor="center", pady=self.buttons_y_padding)
 
         # "Back to login" Label (packed only if app is using db)
@@ -315,6 +316,14 @@ class Home_Window(Custom_Toplevel):
         self.splash_frame.grid(row=0, column=1, sticky="ns", padx=(1,1))
         self.grid_rowconfigure(0, weight=1)
         self.test_label = Label(self.splash_frame)
+
+        try:
+            self.splashart_img = PIL.Image.open("../config_files/imgs/home_splash.png")
+            self.splashart = PIL.ImageTk.PhotoImage(self.splashart_img)
+            self.splashart_label = Label(self.splash_frame, image=self.splashart)
+            self.splashart_label.pack()
+        except:
+            pass
 
         #### credits frame
         self.credits_frame = Frame(self, width=396, height=20, bg=appLib.default_background)
@@ -341,7 +350,6 @@ class Splitter_Window(Custom_Toplevel):
         # define back button
         self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
         self.canvas.create_window(30,30, window=self.back_button)
-        self.apply_balloon_to_widget(self.back_button, text="Torna alla Home")
 
         # define Logo
         self.logo_image = PhotoImage(file=appLib.logo_path)
@@ -523,9 +531,9 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.back_button.grid(row=1, column=1, sticky="w")
 
         # define excel import
-        self.xls_logo = Image.open("../config_files/imgs/xlsx_logo.ico")
+        self.xls_logo = PIL.Image.open("../config_files/imgs/xlsx_logo.ico")
         self.xls_logo = self.xls_logo.resize((28,28))
-        self.xls_logo = ImageTk.PhotoImage(self.xls_logo)
+        self.xls_logo = PIL.ImageTk.PhotoImage(self.xls_logo)
         self.excel_label = Label(self, image=self.xls_logo, font=("Calibri", 8, "bold"), bg=appLib.default_background)
         self.excel_label.grid(row=2, column=1, sticky=W)
         self.excel_label.bind('<Button 1>', lambda event: self.import_Excel())

@@ -3,7 +3,7 @@
 block_cipher = None
 
 
-a = Analysis(['lib\\components.py'],
+a = Analysis(['components\\main.py'],
              pathex=['C:\\Users\\Fabio.Magrotti.CSI\\source\\repos\\BusinessCat'],
              binaries=[],
              datas=[],
@@ -19,15 +19,19 @@ pyz = PYZ(a.pure, a.zipped_data,
              cipher=block_cipher)
 exe = EXE(pyz,
           a.scripts,
-          a.binaries,
-          a.zipfiles,
-          a.datas,
           [],
+          exclude_binaries=True,
           name='BusinessCat',
           debug=False,
           bootloader_ignore_signals=False,
           strip=False,
           upx=True,
-          upx_exclude=[],
-          runtime_tmpdir=None,
           console=False , icon='config_files\\imgs\\Cat.ico')
+coll = COLLECT(exe,
+               a.binaries,
+               a.zipfiles,
+               a.datas,
+               strip=False,
+               upx=True,
+               upx_exclude=[],
+               name='BusinessCat')
