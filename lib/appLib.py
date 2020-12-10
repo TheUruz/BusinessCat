@@ -106,6 +106,13 @@ def CREATE_BUSTE(file_to_split, dirname):
     inputpdf = fitz.open(file_to_split)
     check_name = ""
 
+    # possible slots where the name is stored in the pdf {slot:array_split_at}
+    lookup_range = {
+    19:1,
+    21:1,
+    117:0
+}
+
     # chech if file in directory
     if not os.path.exists(file_to_split):
         raise Exception(f"Non ho trovato il file {file_to_split} nella mia stessa directory!")
@@ -117,41 +124,53 @@ def CREATE_BUSTE(file_to_split, dirname):
     # per ogni pagina
     for i in range(inputpdf.pageCount):
         page = inputpdf.loadPage(i)
-        obj = page.getTextBlocks()
-        found_name = False
-        name = ""
+        blocks = page.getText("blocks")
+        blocks.sort(key=lambda block: block[1])  # sort vertically ascending
 
-        # range in cui è possibile trovare il nome nel foglio
-        check_range = [37, 38, 39]
+        paycheck_owner = None
 
-        # loop sulle pagine
-        for x in check_range:
-            check = obj[x]
-            name = check[4].split('\n')[1].lower()
+        for index, b in enumerate(blocks):
 
-            if name:
-                if name[0] == ' ' or name[0].isdigit() and name[0].lower() in mesi:
-                    continue
-                else:
-                    found_name = True
-                    break
+            # per ogni range in cui è possibile trovare il nome
+            for key in lookup_range:
+                if index == key:
 
-        # se dopo aver loopato i tre possibili slot col nome non ne trova nessuno raiso errore
-        if not found_name:
-            raise Exception(f"non ho trovato il nome del proprietario della busta paga nel foglio numero {i}")
+                    name = b[4]
+
+                    if not name.startswith("<"):
+                        name = name.split('\n')[lookup_range[key]]
+
+                    if key != 117:
+                        if name != "Codicesdipendente" \
+                                and name != "CodicesFiscale" \
+                                and not name[0].isdigit() \
+                                and not name.startswith("<"):
+                            name_ = name.split(" ")
+                            new_name = ""
+                            for word in name_:
+                                new_name += word[0].upper() + word[1:].lower() + " "
+                            paycheck_owner = new_name[:-1]
+                    else:
+                        name_ = (name[12:]).split()[:-1]
+                        new_name = ""
+                        for word in name_:
+                            new_name += word[0].upper() + word[1:].lower() + " "
+                        paycheck_owner = new_name[:-1]
+
+        if not paycheck_owner:
+            raise Exception(f"Errore non ho trovato il proprietario della busta numero {i}")
         else:
-
             paycheck = fitz.Document()
 
             # se il nome è lo stesso del foglio precedente salvo il pdf come due facciate
-            if name == check_name:
+            if paycheck_owner == check_name:
                 paycheck.insertPDF(inputpdf, from_page=i - 1, to_page=i)
             # altrimenti salvo solo la pagina corrente
             else:
                 paycheck.insertPDF(inputpdf, from_page=i, to_page=i)
 
-            check_name = name
-            paycheck.save(dirname + "/" + name + ".pdf")
+            check_name = paycheck_owner
+            paycheck.save(dirname + "/" + paycheck_owner + ".pdf")
 
 def CREATE_CARTELLINI(file_to_split, dirname):
     try:
