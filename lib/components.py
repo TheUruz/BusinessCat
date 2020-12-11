@@ -641,13 +641,42 @@ class Mail_Sender_Window(Custom_Toplevel):
             messagebox.showinfo("Attachment success", f"File allegato con successo\n\n{f.name}")
 
     def check_attachments(self):
+
+        def empty_attachments(self, att_window):
+            to_empty = []
+            # spot widget to remove
+            for child in att_window.children:
+                to_empty.append(att_window.children[child])
+
+            # removing widgets
+            for widget in to_empty:
+                widget.destroy()
+
+            for k, v in self.email.get_params()[1:]:
+                print(k, v)
+                self.email.del_param(k)
+
+            self.email.set_type('text/plain')
+            del self.email['Content-Transfer-Encoding']
+            del self.email['Content-Disposition']
+
+            att_window.minsize(width=350, height=50)
+            Label(att_window, text="Lista allegati vuota", font=("Calibri", 12), bg=appLib.default_background).pack(fill=Y, expand=True)
+
+
+
+        # iter throught email attachments
         attachments = [x.get_filename() for x in self.email.iter_attachments()]
 
+        # creating attachment window
         att_window = Toplevel(self, bg=appLib.default_background)
         att_window.title("Attachments")
         att_window.minsize(width=350, height=150)
         att_window.resizable(False, False)
+        att_window.focus_set()
+        att_window.grab_set()
 
+        # pack attachments names
         if attachments or self.paycheck_var.get() or self.badges_var.get():
             top_text = Label(att_window, text="Questi sono i file che hai allegato:", font=("Calibri", 14), fg=appLib.color_orange, bg= appLib.default_background)
             top_text.pack(expand=1, fill=BOTH)
@@ -661,9 +690,15 @@ class Mail_Sender_Window(Custom_Toplevel):
                 text = Label(att_window, text=a, font=("Calibri", 12), bg=appLib.default_background)
                 text.pack(pady=(1, 1))
 
+            # pack clear list button
+            clear_list_btn = Button(att_window, text="Rimuovi gli allegati (work in progress)", font=("Calibri", 9), bg=appLib.default_background, command= lambda: empty_attachments(self, att_window), state=DISABLED)
+            clear_list_btn.pack(expand=True)
+
         else:
             att_window.minsize(width=350, height=50)
             Label(att_window, text="Lista allegati vuota", font=("Calibri", 12), bg=appLib.default_background).pack(fill=Y, expand=True)
+
+
 
         return attachments
 
