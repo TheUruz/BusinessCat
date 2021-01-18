@@ -14,6 +14,11 @@ from ttkwidgets.frames import Balloon
 from tkinter import filedialog
 from tkinter import messagebox
 
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from email.mime.text import MIMEText
+from email import encoders
+
 import mysql.connector
 
 class Custom_Toplevel(Toplevel):
@@ -410,6 +415,9 @@ class Splitter_Window(Custom_Toplevel):
         self.check_send_mail()
 
     def changeContent(self, txtbox):
+        '''
+        change the content of a given Entry Object
+        '''
         filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",
                                               filetype=[("PDF files", "*.pdf*")])
         if not filename:
@@ -504,6 +512,7 @@ class Mail_Sender_Window(Custom_Toplevel):
         self.title(self.title().split("-")[:1][0] + " - " + "Mail Sender")
         self.margin = 15
         self.done_paychecks, self.done_badges = self.verify_paycheck_badges()
+        #self.email = MIMEMultipart()
         self.email = EmailMessage()
 
 
@@ -637,7 +646,17 @@ class Mail_Sender_Window(Custom_Toplevel):
             file_name = f.name.split('/')[-1]
             maintype = file_type[0]
             subtype = file_type[1]
+
+            '''
+            #other way around. not working though. must fix something here to make it work
+            attachment = MIMEApplication(file_data, _subtype=subtype)
+            #if maintype == 'text' and subtype == 'plain': encoders.encode_base64(attachment)
+            attachment.add_header('Content-Decomposition', 'attachment', filename=file_name)
+            self.email.attach(attachment)
+            '''
+
             self.email.add_attachment(file_data, maintype=maintype, subtype=subtype, filename=file_name)
+
             messagebox.showinfo("Attachment success", f"File allegato con successo\n\n{f.name}")
 
     def check_attachments(self):
@@ -762,7 +781,7 @@ class Mail_Sender_Window(Custom_Toplevel):
             # setting email
             self.email['Subject'] = mail_title
             self.email['From'] = (appLib.load_email_server_config())['email']
-            self.email.set_content(mail_text)
+            self.email.add_attachment(MIMEText(mail_text, 'plain')) # this is the mail body
 
             # SEND MAIL TO CONTACTS
             df = self.table.model.df
@@ -803,7 +822,7 @@ class Mail_Sender_Window(Custom_Toplevel):
                             print(f"WARNING: cannot find attachment path: {path}")
 
                     # send email to row contact
-                    #connection.send_message(msg_obj)
+                    connection.send_message(msg_obj)
                     print(f"SENT -> {msg_obj['To']}")
 
             # end connection with server
@@ -817,6 +836,7 @@ class Mail_Sender_Window(Custom_Toplevel):
 
         except Exception as e:
             messagebox.showerror("Errore", f"Errore riscontrato: {e}")
+            print(e)
             self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
             self.circle_label.config(text="Errore", fg=appLib.color_red)
 
