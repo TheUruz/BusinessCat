@@ -24,6 +24,7 @@ import pandas as pd
 # PATHS
 db_config_path = "../config_files/db/config.json"
 email_config_path = "../config_files/email_service/config.json"
+google_config_path = "../config_files/google/google_userconfig.json"
 logo_path = "../config_files/imgs/BusinessCat.png"
 icon_path = "../config_files/imgs/Cat.ico"
 
@@ -281,7 +282,17 @@ def check_paycheck_badges():
 
     return check
 
-''' GOOGLE API '''
+
+''' GOOGLE API METHODS '''
+
+def load_google_config():
+    try:
+        with open(google_config_path, "r") as f:
+            config = json.load(f)
+    except:
+        raise Exception("Cannot find Google user config file")
+
+    return config
 
 def authenticate(func):
     def auth_wrapper(*args, **kwargs):
@@ -322,13 +333,14 @@ def create_auth_session(credentials=creds):
 def build_service(service, version="v3"):
     return build(service, version, credentials=creds)
 
-def get_comparison_df(fileId="1rVxrpI4uh-ptHYx0QqIXnRQaXF2d20wShsh0oUxjd30"):
+def get_comparison_df(month):
     """
     get google sheet for comparison. return it as a pandas dataframe
     """
+    google_config = load_google_config()
     service = build_service("drive")
     conversion_table = service.about().get(fields="exportFormats").execute()
-    request = service.files().export_media(fileId=fileId, mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    request = service.files().export_media(fileId=google_config["Drive_lookup"]["ID"], mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     fh = io.BytesIO()
 
     # download file bytestream
@@ -338,7 +350,7 @@ def get_comparison_df(fileId="1rVxrpI4uh-ptHYx0QqIXnRQaXF2d20wShsh0oUxjd30"):
         status, done = downloader.next_chunk()
 
     # parse bytestream into df
-    df = pd.read_excel(fh)
+    df = pd.read_excel(fh, sheet_name=month.upper())
     return df
 
 
@@ -422,10 +434,16 @@ class PaycheckController():
     def __init__(self, paychecks_to_check, badges_to_check):
         """
         paychecks_to_check (str) -> path to multiple pages pdf containing all paychecks to check
+        badges_to_check (str) -> path to folder containing all badges files as .pdf
         """
+        try:
+            self.__validate_data(paychecks_to_check, badges_to_check)
+        except Exception() as e:
+            raise Exception(e)
 
         self.badges_path = badges_to_check # path to CARTELLINI folder
         self.paychecks_to_check = paychecks_to_check # lul_controllo
+
         self.verify_filename = "Verifica.xlsx" #name of the output verification xlsx
         self.highlight_error = "FFFFFFFF"
         self.default_configuration = {
@@ -501,12 +519,27 @@ class PaycheckController():
 
     """ PRIVATE METHODS """
     def __load_config(self):
+        """
+        set PaycheckController configuration. with this configuration the program knows wich field
+        extract from paychecks
+        """
         if os.path.exists("config_files/conversion_table.json"):
             with open("config_files/conversion_table.json", "r") as f:
                 return json.load(f)
         else:
             return copy.deepcopy(self.default_configuration)
 
+    def __validate_data(self, paychecks_to_check, badges_to_check):
+        if not os.path.exists(paychecks_to_check):
+            raise Exception(f"Error: cannot find {paychecks_to_check}")
+        if not os.path.exists(badges_to_check):
+            raise Exception(f"Error: cannot find {badges_to_check}")
+        if not os.path.isdir(badges_to_check):
+            raise Exception(f"Error: {badges_to_check} is not a folder")
+        if len(os.listdir(badges_to_check)) < 1:
+            raise Exception(f"Error: {badges_to_check} is empty!")
+
+        return True
 
     """ PUBLIC METHODS """
     def create_config_from_csv(self, csv_path):
@@ -813,44 +846,27 @@ class PaycheckController():
         with pd.ExcelWriter(self.verify_filename, mode=open_mode) as writer:
             df.to_excel(writer, sheet_name=sheet_name)
 
-    def get_comparison_df(self, fileId="1rVxrpI4uh-ptHYx0QqIXnRQaXF2d20wShsh0oUxjd30"):
-        """
-        get google sheet for comparison. return it as a pandas dataframe
-        """
-        service = build_service("drive")
-        conversion_table = service.about().get(fields="exportFormats").execute()
-        request = service.files().export_media(fileId=fileId,
-                                               mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        fh = io.BytesIO()
+    def compare_badges_to_paychecks(self, keep_refer_values=True):
 
-        # download file bytestream
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-
-        # parse bytestream into df
-        df = pd.read_excel(fh)
-        return df
-
-    def compare_badges_to_paychecks(self, xlsx_path, keep_refer_values=False):
-
-        if not os.path.exists(xlsx_path):
-            raise Exception("Error: cannot find file in path")
-
-        badges_df = pd.read_excel(xlsx_path, sheet_name="Verifica Cartellini", index_col=0).fillna(0)
-        paychecks_df = pd.read_excel(xlsx_path, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
+        CHECK_SUFFIX = " PAYCHECK"
+        badges_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Cartellini", index_col=0).fillna(0)
+        paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
 
         # set indexes name
         badges_df.index.name = "LAVORATORI"
         paychecks_df.index.name = "LAVORATORI"
 
+        # uniform indexes
+        badges_df.index = badges_df.index.str.upper()
+        paychecks_df.index = paychecks_df.index.str.upper()
+
         # create df with all data
         common_columns = set(badges_df.columns.values).intersection(set(paychecks_df.columns.values))
         common_df = paychecks_df[list(common_columns)].copy()
-        common_df = common_df.rename(columns={'Ore ordinarie': 'Ore ordinarie PAYCHECK', 'Ore straordinarie': 'Ore straordinarie PAYCHECK'})
+        renaming = {key: key + CHECK_SUFFIX for key in common_df.columns.values}
+        common_df = common_df.rename(columns=renaming)
 
-        # fix wrong indexes
+        # fix wrong indexes in badges
         badges_df = badges_df.rename(index={'COBIANCHI MARCO': 'COBIANCHI MARCO GABRIELE',
                                          'GUZMAN URENA ALEXANDER': 'GUZMAN URENA ALEXANDER DE JESUS',
                                          'NUTU LOREDANA ADRIAN': 'NUTU LOREDANA ADRIANA'
@@ -869,7 +885,7 @@ class PaycheckController():
         matching = {}
         for col in matching_:
             matching[col] = 0
-            matching[col + " PAYCHECK"] = 0
+            matching[col + CHECK_SUFFIX] = 0
         for col in headings:
             if col in matching.keys():
                 matching[col] = headings.index(col)
@@ -887,8 +903,8 @@ class PaycheckController():
 
                 # find worker errors
                 for data in worker_check:
-                    check_val = data + " PAYCHECK"
-                    if "PAYCHECK" not in data and check_val in worker_check:
+                    check_val = data + CHECK_SUFFIX
+                    if CHECK_SUFFIX not in data and check_val in worker_check:
                         if worker_check[data] - worker_check[check_val] != 0:
                             worker_errors.append(data)
                             worker_errors.append(check_val)
@@ -908,7 +924,7 @@ class PaycheckController():
         if not keep_refer_values:
             col_to_remove = []
             for val in matching:
-                if "PAYCHECK" in val:
+                if CHECK_SUFFIX in val:
                     col_to_remove.append(matching[val]+1)
             for val in sorted(col_to_remove, reverse=True):
                 ws.delete_cols(val)
@@ -917,7 +933,9 @@ class PaycheckController():
         #replace old verification with edited one
         destination_workbook.remove(destination_workbook["Verifica Cartellini"])
         ws.title = "Verifica Cartellini"
-        destination_workbook.save("Verifica.xlsx")
+        destination_workbook.save(self.verify_filename)
+
+        print(f">> BADGES COMPARED WITH PAYCHECKS SUCCESSFULLY")
 
         """
         # funziona male. evidenzia giusto ma non tutto
@@ -927,3 +945,92 @@ class PaycheckController():
             styled_df = styled_df.apply(lambda i_: ["background-color:red" if data_df.iloc[i_][col_to_check] - data_df.iloc[i_][column] != 0 else "" for i_, row in enumerate(data_df.iterrows())], subset=[column], axis=0)
         styled_df.to_excel("test.xlsx", engine="openpyxl", index=True)
         """
+
+    def compare_paychecks_to_drive(self, month, keep_refer_values=True):
+
+        CHECK_SUFFIX = " DRIVE"
+        drive_df = get_comparison_df(month)
+        paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
+
+        # set indexes name
+        paychecks_df.index.name = "LAVORATORI"
+
+        # uniform indexes
+        drive_df.index = drive_df.index.str.upper()
+        paychecks_df.index = paychecks_df.index.str.upper()
+
+        # create df with all data
+        common_columns = set(drive_df.columns.values).intersection(set(paychecks_df.columns.values))
+        common_df = drive_df[list(common_columns)].copy()
+        renaming = {key: key + CHECK_SUFFIX for key in common_df.columns.values}
+        common_df = common_df.rename(columns=renaming)
+
+        data_df = paychecks_df.merge(common_df, left_index=True, right_index=True)
+        self.create_Excel(data_df, sheet_name="temp", transposed=False)
+
+        destination_workbook = openpyxl.load_workbook(self.verify_filename)
+        ws = destination_workbook["temp"]
+
+        # find column of columns to highlight
+        headings = [row for row in ws.iter_rows()][0]
+        headings = [x.value for x in headings]
+        matching_ = dict.fromkeys(common_columns, 0)
+        matching = {}
+        for col in matching_:
+            matching[col] = 0
+            matching[col + CHECK_SUFFIX] = 0
+        for col in headings:
+            if col in matching.keys():
+                matching[col] = headings.index(col)
+
+        for index, row in enumerate(ws.iter_rows()):
+            # headers exclueded
+            if index != 0:
+                row_values = [x.value for x in row]
+                worker_check = {}
+                worker_errors = []
+
+                # gather worker data
+                for key in matching:
+                    val = row_values[matching[key]]
+                    if isinstance(val, str) and "€" in val:
+                        val = val.replace("€", "").replace("-", "").replace(",", ".").strip()
+                    worker_check[key] = float(val) if val else 0
+
+                # find worker errors
+                for data in worker_check:
+                    check_val = data + CHECK_SUFFIX
+                    if CHECK_SUFFIX not in data and check_val in worker_check:
+                        try:
+                            if worker_check[data] - worker_check[check_val] != 0:
+                                worker_errors.append(data)
+                                worker_errors.append(check_val)
+                        except Exception as e:
+                            print(e)
+
+                if worker_errors:
+                    # parse errors to cells
+                    highlight_row = index + 1
+                    for _i, error in enumerate(worker_errors):
+                        highlight_column = get_column_letter(matching[error] + 1)
+                        worker_errors[_i] = str(highlight_column) + str(highlight_row)
+
+                    for c in worker_errors:
+                        cell = ws[c]
+                        cell.fill = PatternFill(start_color='FFEE1111', end_color='FFEE1111', fill_type='solid')
+
+        # drop refer columns conditionally
+        if not keep_refer_values:
+            col_to_remove = []
+            for val in matching:
+                if CHECK_SUFFIX in val:
+                    col_to_remove.append(matching[val] + 1)
+            for val in sorted(col_to_remove, reverse=True):
+                ws.delete_cols(val)
+
+        # replace old verification with edited one
+        destination_workbook.remove(destination_workbook["Verifica Buste Paga"])
+        ws.title = "Verifica Buste Paga"
+        destination_workbook.save(self.verify_filename)
+
+        print(f">> PAYCHECKS COMPARED WITH DRIVE {month} VALUES SUCCESSFULLY")
