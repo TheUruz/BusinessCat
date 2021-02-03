@@ -1,14 +1,23 @@
 import os
+import copy
+import io
+import pickle
 import fitz # PyMuPDF
 import json
 import mysql
 import smtplib
+import openpyxl
+
+from openpyxl.utils.cell import get_column_letter
+from openpyxl.styles import PatternFill
 from threading import Thread
 from operator import itemgetter
-
+from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request, AuthorizedSession
 from email.message import EmailMessage
 from email.mime.text import MIMEText
-import copy
 
 import pandas as pd
 
@@ -25,6 +34,13 @@ color_green = "#009922"
 color_yellow = "#ffe01a"
 color_red = "#ff3333"
 color_orange = "#e59345"
+
+# GOOGLE VARIABLES
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'config_files/google_credentials.json'
+creds = None
+SCOPE = [
+    'https://www.googleapis.com/auth/drive'
+]
 
 
 ''' UTILITIES '''
@@ -265,6 +281,143 @@ def check_paycheck_badges():
 
     return check
 
+''' GOOGLE API '''
+
+def authenticate(func):
+    def auth_wrapper(*args, **kwargs):
+
+        global creds
+        global SCOPE
+
+        # load token.pickle if present
+        if os.path.exists('config_files/token.pickle'):
+            with open('config_files/token.pickle', 'rb') as token:
+                creds = pickle.load(token)
+
+        if not creds or not creds.valid:
+            # ? if token needs to be refreshed it will be refreshed
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            # ? otherwise authenticate
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(os.environ['GOOGLE_APPLICATION_CREDENTIALS'], SCOPE)
+                creds = flow.run_local_server(port=0)
+
+            with open('config_files/token.pickle', 'wb') as token:
+                pickle.dump(creds, token)
+
+        # raise if user does not authenticate
+        if not creds:
+            raise Exception("You are not allowed to run this method >> Unauthorized")
+
+        return func(*args, **kwargs)
+
+    return auth_wrapper
+
+@authenticate
+def create_auth_session(credentials=creds):
+    return AuthorizedSession(credentials)
+
+@authenticate
+def build_service(service, version="v3"):
+    return build(service, version, credentials=creds)
+
+def get_comparison_df(fileId="1rVxrpI4uh-ptHYx0QqIXnRQaXF2d20wShsh0oUxjd30"):
+    """
+    get google sheet for comparison. return it as a pandas dataframe
+    """
+    service = build_service("drive")
+    conversion_table = service.about().get(fields="exportFormats").execute()
+    request = service.files().export_media(fileId=fileId, mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    fh = io.BytesIO()
+
+    # download file bytestream
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    # parse bytestream into df
+    df = pd.read_excel(fh)
+    return df
+
+
+''' MAILS '''
+
+def load_email_server_config():
+    try:
+        with open(email_config_path, 'r') as f:
+            config = json.load(f)
+        return config
+    except:
+        raise Exception("Cannot find email server config file")
+
+def connect_to_mail_server():
+    config = load_email_server_config()
+    smtp = smtplib.SMTP_SSL(config['server'], config['port'], timeout=10)
+    smtp.ehlo()
+    try:
+        smtp.login(config['email'], config['password'])
+        print(f"""CONNECTED SUCCESSFULLY:\n
+        -> SERVER {config['server']}\n
+        -> PORT {config['port']}\n
+        -> USER {config['email']}\n
+        -> PWD {"*"*len(str(config['password']))}
+        """)
+    except:
+        raise Exception("Login al server non riuscito")
+
+    return smtp
+
+
+''' DB UTILS '''
+
+def load_db_config():
+    try:
+        with open(db_config_path, "r") as f:
+            config = json.load(f)
+    except:
+        raise Exception("Cannot find db config file")
+
+    return config
+
+def connect_to_db(config):
+
+    db = mysql.connector.connect(
+        host=config['host'],
+        password=config['password'],
+        username=config['username'],
+        database=config['database'],
+        port=config['port']
+    )
+
+    return db
+
+def add_user(db, cursor, email, pwd, product_key, workstations):
+    workstations = json.dumps(workstations)
+
+    task = f"INSERT INTO users (email, pwd, product_key, workstations) VALUES ('{email}','{pwd}','{product_key}','{workstations}')"
+    print(task)
+
+    cursor.execute(task)
+    print(f"-> user added")
+    db.commit()
+    return cursor
+
+def check_registered(cursor, email):
+    already_registered = False
+
+    task = f"SELECT * FROM users WHERE email = '{email}'"
+    cursor.execute(task)
+
+    if cursor.fetchone():
+        already_registered = True
+
+    return already_registered
+
+
+''' CLASSES '''
+
 class PaycheckController():
     def __init__(self, paychecks_to_check, badges_to_check):
         """
@@ -274,6 +427,7 @@ class PaycheckController():
         self.badges_path = badges_to_check # path to CARTELLINI folder
         self.paychecks_to_check = paychecks_to_check # lul_controllo
         self.verify_filename = "Verifica.xlsx" #name of the output verification xlsx
+        self.highlight_error = "FFFFFFFF"
         self.default_configuration = {
                 "col_codes": {},
                 "col_to_extract": [
@@ -449,10 +603,22 @@ class PaycheckController():
                     content = b[4].split('\n')
                     content = [string for string in content if (string != "" and not string.startswith("   "))]
 
+                    # find ordinary and overtime hours in paycheck
+                    h_check = [h.lower().strip() for h in content]
+                    if "ore ordinarie" and "ore straordinarie" in h_check:
+                        w_hours = [x for x in blocks[index+2][4].split('\n') if "," in x]
+                        if len(w_hours) == 1:
+                            w_hours.append("0")
+                        try:
+                            total_content[name]['Ore ordinarie'] = float(w_hours[0].replace(",","."))
+                            total_content[name]['Ore straordinarie'] = float(w_hours[1].replace(",","."))
+                        except IndexError:
+                            pass
+
                     # parsing content
                     for i, elem in enumerate(content):
 
-                        # get netto
+                        # parse netto del mese
                         if "NETTOsDELsMESE" in elem:
                             netto = blocks[index+1][-3]
                             netto = netto.replace("€", "").strip().replace(",",".")
@@ -632,91 +798,132 @@ class PaycheckController():
             self.create_Excel(total_content, sheet_name)
             print(f"File {self.verify_filename} generato con successo, {sheet_name} aggiunto al suo interno")
 
-    def create_Excel(self, content, sheet_name):
-        df = pd.DataFrame.from_dict(content).T
+    def create_Excel(self, content, sheet_name, transposed=True):
+        df = pd.DataFrame.from_dict(content)
 
-        # sort alphabetically
+        if transposed:
+            df = df.T
+
+        # sort alphabetically rows and columns
         df = df.sort_index()
+        df = df.reindex(sorted(df.columns), axis=1)
 
         open_mode = "a" if os.path.exists(self.verify_filename) else "w"
 
         with pd.ExcelWriter(self.verify_filename, mode=open_mode) as writer:
             df.to_excel(writer, sheet_name=sheet_name)
 
-    def get_drive_file(self, filename):
-        pass
+    def get_comparison_df(self, fileId="1rVxrpI4uh-ptHYx0QqIXnRQaXF2d20wShsh0oUxjd30"):
+        """
+        get google sheet for comparison. return it as a pandas dataframe
+        """
+        service = build_service("drive")
+        conversion_table = service.about().get(fields="exportFormats").execute()
+        request = service.files().export_media(fileId=fileId,
+                                               mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        fh = io.BytesIO()
+
+        # download file bytestream
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        # parse bytestream into df
+        df = pd.read_excel(fh)
+        return df
+
+    def compare_badges_to_paychecks(self, xlsx_path, keep_refer_values=False):
+
+        if not os.path.exists(xlsx_path):
+            raise Exception("Error: cannot find file in path")
+
+        badges_df = pd.read_excel(xlsx_path, sheet_name="Verifica Cartellini", index_col=0).fillna(0)
+        paychecks_df = pd.read_excel(xlsx_path, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
+
+        # set indexes name
+        badges_df.index.name = "LAVORATORI"
+        paychecks_df.index.name = "LAVORATORI"
+
+        # create df with all data
+        common_columns = set(badges_df.columns.values).intersection(set(paychecks_df.columns.values))
+        common_df = paychecks_df[list(common_columns)].copy()
+        common_df = common_df.rename(columns={'Ore ordinarie': 'Ore ordinarie PAYCHECK', 'Ore straordinarie': 'Ore straordinarie PAYCHECK'})
+
+        # fix wrong indexes
+        badges_df = badges_df.rename(index={'COBIANCHI MARCO': 'COBIANCHI MARCO GABRIELE',
+                                         'GUZMAN URENA ALEXANDER': 'GUZMAN URENA ALEXANDER DE JESUS',
+                                         'NUTU LOREDANA ADRIAN': 'NUTU LOREDANA ADRIANA'
+                                         })
+
+        data_df = badges_df.merge(common_df, left_index=True, right_index=True)
+        self.create_Excel(data_df, sheet_name="temp", transposed=False)
+
+        destination_workbook = openpyxl.load_workbook(self.verify_filename)
+        ws = destination_workbook["temp"]
+
+        # find column of columns to highlight
+        headings = [row for row in ws.iter_rows()][0]
+        headings = [x.value for x in headings]
+        matching_ = dict.fromkeys(common_columns, 0)
+        matching = {}
+        for col in matching_:
+            matching[col] = 0
+            matching[col + " PAYCHECK"] = 0
+        for col in headings:
+            if col in matching.keys():
+                matching[col] = headings.index(col)
+
+        for index, row in enumerate(ws.iter_rows()):
+            # headers exclueded
+            if index != 0:
+                row_values = [x.value for x in row]
+                worker_check = {}
+                worker_errors = []
+
+                # gather worker data
+                for val in matching:
+                    worker_check[val] = row_values[matching[val]]
+
+                # find worker errors
+                for data in worker_check:
+                    check_val = data + " PAYCHECK"
+                    if "PAYCHECK" not in data and check_val in worker_check:
+                        if worker_check[data] - worker_check[check_val] != 0:
+                            worker_errors.append(data)
+                            worker_errors.append(check_val)
+
+                if worker_errors:
+                    # parse errors to cells
+                    highlight_row = index + 1
+                    for _i, error in enumerate(worker_errors):
+                        highlight_column = get_column_letter(matching[error]+1)
+                        worker_errors[_i] = str(highlight_column) + str(highlight_row)
+
+                    for c in worker_errors:
+                        cell = ws[c]
+                        cell.fill = PatternFill(start_color='FFEE1111', end_color='FFEE1111', fill_type='solid')
+
+        # drop refer columns conditionally
+        if not keep_refer_values:
+            col_to_remove = []
+            for val in matching:
+                if "PAYCHECK" in val:
+                    col_to_remove.append(matching[val]+1)
+            for val in sorted(col_to_remove, reverse=True):
+                ws.delete_cols(val)
 
 
-''' MAILS '''
+        #replace old verification with edited one
+        destination_workbook.remove(destination_workbook["Verifica Cartellini"])
+        ws.title = "Verifica Cartellini"
+        destination_workbook.save("Verifica.xlsx")
 
-def load_email_server_config():
-    try:
-        with open(email_config_path, 'r') as f:
-            config = json.load(f)
-        return config
-    except:
-        raise Exception("Cannot find email server config file")
-
-def connect_to_mail_server():
-    config = load_email_server_config()
-    smtp = smtplib.SMTP_SSL(config['server'], config['port'], timeout=10)
-    smtp.ehlo()
-    try:
-        smtp.login(config['email'], config['password'])
-        print(f"""CONNECTED SUCCESSFULLY:\n
-        -> SERVER {config['server']}\n
-        -> PORT {config['port']}\n
-        -> USER {config['email']}\n
-        -> PWD {"*"*len(str(config['password']))}
-        """)
-    except:
-        raise Exception("Login al server non riuscito")
-
-    return smtp
-
-
-''' DB UTILS '''
-
-def load_db_config():
-    try:
-        with open(db_config_path, "r") as f:
-            config = json.load(f)
-    except:
-        raise Exception("Cannot find db config file")
-
-    return config
-
-def connect_to_db(config):
-
-    db = mysql.connector.connect(
-        host=config['host'],
-        password=config['password'],
-        username=config['username'],
-        database=config['database'],
-        port=config['port']
-    )
-
-    return db
-
-def add_user(db, cursor, email, pwd, product_key, workstations):
-    workstations = json.dumps(workstations)
-
-    task = f"INSERT INTO users (email, pwd, product_key, workstations) VALUES ('{email}','{pwd}','{product_key}','{workstations}')"
-    print(task)
-
-    cursor.execute(task)
-    print(f"-> user added")
-    db.commit()
-    return cursor
-
-def check_registered(cursor, email):
-    already_registered = False
-
-    task = f"SELECT * FROM users WHERE email = '{email}'"
-    cursor.execute(task)
-
-    if cursor.fetchone():
-        already_registered = True
-
-    return already_registered
-
+        """
+        # funziona male. evidenzia giusto ma non tutto
+        styled_df = data_df.style
+        for column in common_columns:
+            col_to_check = column + " PAYCHECK"
+            styled_df = styled_df.apply(lambda i_: ["background-color:red" if data_df.iloc[i_][col_to_check] - data_df.iloc[i_][column] != 0 else "" for i_, row in enumerate(data_df.iterrows())], subset=[column], axis=0)
+        styled_df.to_excel("test.xlsx", engine="openpyxl", index=True)
+        """
