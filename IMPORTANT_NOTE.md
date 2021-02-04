@@ -1,5 +1,5 @@
 
-<p align="center"><img width="150" height="160" src="https://www.drupal.org/files/project-images/Google-API.jpg"/></p>
+<p align="center"><img width="300" height="160" src="https://www.drupal.org/files/project-images/Google-API.jpg"/></p>
 
 <br><br>
 
