@@ -6,7 +6,7 @@ block_cipher = None
 a = Analysis(['components\\main.py'],
              pathex=['C:\\Users\\Fabio.Magrotti.CSI\\source\\repos\\BusinessCat'],
              binaries=[],
-             datas=[],
+             datas=[('C:\\Users\\Fabio.Magrotti.CSI\\source\\repos\\BusinessCat\\venv\\Lib\\site-packages\\google_api_python_client-1.12.8.dist-info\\*', 'google_api_python_client-1.12.18.dist-info')],
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
@@ -26,8 +26,7 @@ exe = EXE(pyz,
           bootloader_ignore_signals=False,
           strip=False,
           upx=True,
-          console=False,
-          icon='config_files\\imgs\\Cat.ico' )
+          console=False , icon='config_files\\imgs\\Cat.ico')
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,

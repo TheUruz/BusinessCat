@@ -37,7 +37,7 @@ color_red = "#ff3333"
 color_orange = "#e59345"
 
 # GOOGLE VARIABLES
-os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'config_files/google_credentials.json'
+os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '../config_files/google/google_credentials.json'
 creds = None
 SCOPE = [
     'https://www.googleapis.com/auth/drive'
@@ -301,8 +301,8 @@ def authenticate(func):
         global SCOPE
 
         # load token.pickle if present
-        if os.path.exists('config_files/token.pickle'):
-            with open('config_files/token.pickle', 'rb') as token:
+        if os.path.exists('../config_files/google/token.pickle'):
+            with open('../config_files/google/token.pickle', 'rb') as token:
                 creds = pickle.load(token)
 
         if not creds or not creds.valid:
@@ -314,7 +314,7 @@ def authenticate(func):
                 flow = InstalledAppFlow.from_client_secrets_file(os.environ['GOOGLE_APPLICATION_CREDENTIALS'], SCOPE)
                 creds = flow.run_local_server(port=0)
 
-            with open('config_files/token.pickle', 'wb') as token:
+            with open('../config_files/google/token.pickle', 'wb') as token:
                 pickle.dump(creds, token)
 
         # raise if user does not authenticate
@@ -523,8 +523,8 @@ class PaycheckController():
         set PaycheckController configuration. with this configuration the program knows wich field
         extract from paychecks
         """
-        if os.path.exists("config_files/conversion_table.json"):
-            with open("config_files/conversion_table.json", "r") as f:
+        if os.path.exists("../config_files/conversion_table.json"):
+            with open("../config_files/conversion_table.json", "r") as f:
                 return json.load(f)
         else:
             return copy.deepcopy(self.default_configuration)
@@ -571,7 +571,7 @@ class PaycheckController():
         # setting self.config with parsed data
         self.config["col_codes"] = columns
 
-        with open("config_files/conversion_table.json", "w") as f:
+        with open("../config_files/conversion_table.json", "w") as f:
             f.write(json.dumps(self.config, indent=4, ensure_ascii=True))
 
         print(f"* * conversion_table.json created from this file >> {csv_path}")

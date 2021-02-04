@@ -730,7 +730,7 @@ class Mail_Sender_Window(Custom_Toplevel):
         if not filename:
             return
 
-        df = pd.read_excel(filename)
+        df = pd.read_excel(filename).fillna(0)
 
         # column names we want to export
         keep_column = [
@@ -751,7 +751,7 @@ class Mail_Sender_Window(Custom_Toplevel):
         # drop not hired workers
         row_to_drop = []
         for row in df.iterrows():
-            if row[1].loc["ASSUNTO"] == "NO":
+            if row[1].loc["ASSUNTO"] == "NO" or row[1].loc["ASSUNTO"] == 0:
                 row_to_drop.append(row[0])
         df = df.drop(labels=row_to_drop, axis=0)
 
