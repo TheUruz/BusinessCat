@@ -799,6 +799,11 @@ class Mail_Sender_Window(Custom_Toplevel):
             self.email.add_attachment(MIMEText(mail_text, 'plain')) # this is the mail body
 
             # SEND MAIL TO CONTACTS
+
+            # reset dump file
+            if os.path.exists("../LAST_SENT.txt"):
+                with open("../LAST_SENT.txt", "w"): pass
+
             df = self.table.model.df
             for row in df.iterrows():
 
@@ -840,9 +845,14 @@ class Mail_Sender_Window(Custom_Toplevel):
                     connection.send_message(msg_obj)
                     print(f"SENT -> {msg_obj['To']}")
 
+                    # dump past sent
+                    with open("../LAST_SENT.txt", "a+") as contact_dump:
+                        contact_dump.write(f"{msg_obj['To']}\n")
+
             # end connection with server
             connection.quit()
             print(f"\n--> END CONNECTION {(appLib.load_email_server_config())['server']}")
+
 
             # set status circle and label back to ready
             self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
@@ -855,6 +865,81 @@ class Mail_Sender_Window(Custom_Toplevel):
             self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
             self.circle_label.config(text="Errore", fg=appLib.color_red)
 
+class Verificator_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 550
+        self.height = 700
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Verify Paychecks")
+        self.margin = 15
+
+        self.radio_buttons_val = IntVar()
+
+        ############### ROW CONFIGURE
+        self.grid_rowconfigure(0, minsize=self.margin) # empty
+        self.grid_rowconfigure(1, minsize=self.margin)  # back button
+        self.grid_rowconfigure(2, minsize=self.margin*2) # empty
+        self.grid_rowconfigure(3, minsize=self.margin)  # configuration row
+        self.grid_rowconfigure(4, minsize=self.margin*2)  # empty
+        self.grid_rowconfigure(5, minsize=self.margin)  # check_file row
+        self.grid_rowconfigure(6, minsize=self.margin * 2)  # empty
+        self.grid_rowconfigure(7, minsize=self.margin * 3)  # badges label
+        self.grid_rowconfigure(8, minsize=self.margin * 2)  # radio buttons
+        self.grid_rowconfigure(9, minsize=self.margin * 3)  # empty
+        self.grid_rowconfigure(10, minsize=self.margin)  # Gdrive logo and file label
+
+        ############### COLUMN CONFIGURE
+        self.grid_columnconfigure(0, minsize=self.margin) # empty
+        self.grid_columnconfigure(1, minsize=self.margin) # back button
+        self.grid_columnconfigure(2, minsize=self.margin) # window start from here
+        self.grid_columnconfigure(3, minsize=self.margin) # empty
+        self.grid_columnconfigure(4, minsize=self.margin) # textboxes column
+        self.grid_columnconfigure(5, minsize=self.margin*2) # data column
+        self.grid_columnconfigure(6, minsize=self.margin)  # empty
+
+        # define << back Button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button.grid(row=1, column=1, sticky="w")
+
+        # define import configuration Button
+        self.import_config_button = Button(self, width=20, text="Importa Configurazione")
+        self.import_config_button.grid(row=3, column=2)
+
+        # define config Textbox
+        self.config_txtbox = Entry(self, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
+        self.config_txtbox.grid(row=3, column=4, columnspan=2)
+
+        # define file select Button
+        self.check_file_button = Button(self, width=20, text="File da Controllare")
+        self.check_file_button.grid(row=5, column=2)
+
+        # define file_to_check Textbox
+        self.check_file_txtbox = Entry(self, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
+        self.check_file_txtbox.grid(row=5, column=4, columnspan=2)
+
+        # define where_badges Label
+        self.where_badges_label = Label(self, text="Dove sono i Cartellini?", font=("Calibri", 20, "bold"), fg=appLib.color_orange, bg=appLib.default_background)
+        self.where_badges_label.grid(row=7, column=2, columnspan=4)
+
+        # define badges Radio Buttons
+        self.radio_BusinessCat = Radiobutton(self, text="Cartella di BusinessCat", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=1, bg=appLib.default_background)
+        self.radio_BusinessCat.grid(row=8, column=2, columnspan=4, sticky="w")
+        self.radio_BusinessCat.select() # selected by default
+
+        self.radio_Other = Radiobutton(self, text="Altro (Seleziona)", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=2, bg=appLib.default_background)
+        self.radio_Other.grid(row=8, column=2, columnspan=4, sticky="e")
+
+        # define google drive img Label
+        self.gdrive_img_label = Label(self, width=4, height=2, bg=appLib.color_green)
+        self.gdrive_img_label.grid(row=10, column=1, columnspan=3, sticky="e")
+
+        # define choosen file Label
+        self.choosen_file_label = Label(self, text="File da Comparare", font=("Calibri", 12, "bold"), bg=appLib.default_background)
+        self.choosen_file_label.grid(row=10, column=5, columnspan=2, sticky="nsew")
+
+
 
 
 if __name__ == "__main__":
@@ -865,5 +950,6 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Home_Window(root)
+    #app = Home_Window(root)
+    app = Verificator_Window(root)
     app.mainloop()
