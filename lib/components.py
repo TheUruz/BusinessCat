@@ -722,33 +722,48 @@ class Mail_Sender_Window(Custom_Toplevel):
         return attachments
 
     def import_Excel(self, filename=None):
+        """
+        excel must have at least those four columns COGNOME NOME EMAIL ASSUNTO
+        """
         if filename == None:
             filename = filedialog.askopenfilename(parent=self.master, initialdir=os.getcwd(), filetypes=[("xlsx","*.xlsx"),("xls","*.xls")])
         if not filename:
             return
-        to_return = pd.DataFrame()
+
         df = pd.read_excel(filename)
 
-        # column names we want to identify in imported Excel
+        # column names we want to export
         keep_column = [
             "COGNOME",
             "NOME",
             "EMAIL",
         ]
 
-        # create imported dataframe
-        for column in df.columns.values:
-            if column.upper() in keep_column:
-                to_return[column.upper()] = df[column]
-
-        # check if dataframe is valid
+        # check if columns are in dataframe
         for column in keep_column:
-            if not column in to_return:
-                messagebox.showerror("Bad Data", "il file Excel non è conforme al formato richiesto")
+            if not column in df.columns.values:
+                messagebox.showerror("Bad Data", f"Excel file is not providing requested columns >> {keep_column}")
                 return
 
-        # if excel is fine then update model
-        model = TableModel(dataframe=to_return)
+        # set uppercase columns names
+        df = df.rename(columns={key: key.upper() for key in df.columns.values})
+
+        # drop not hired workers
+        row_to_drop = []
+        for row in df.iterrows():
+            if row[1].loc["ASSUNTO"] == "NO":
+                row_to_drop.append(row[0])
+        df = df.drop(labels=row_to_drop, axis=0)
+
+        # drop not wanted columns
+        col_to_drop = []
+        for row in df.T.iterrows():
+            if row[0].upper() not in keep_column:
+                col_to_drop.append(row[0])
+        df = df.drop(labels=col_to_drop, axis=1)
+
+        # update model
+        model = TableModel(dataframe=df)#to_return)
         self.table.updateModel(model)
         self.table.redraw()
         return
