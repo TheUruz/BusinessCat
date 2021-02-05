@@ -353,6 +353,16 @@ def get_comparison_df(month):
     df = pd.read_excel(fh, sheet_name=month.upper())
     return df
 
+def get_sheetlist():
+    """
+    get google sheet list in google drive
+    """
+    service = build_service("drive")
+    results = service.files().list(pageSize=10, fields="nextPageToken, files(id, name, mimeType)", q="mimeType='application/vnd.google-apps.spreadsheet'").execute()
+    items = results.get('files', [])
+    items = sorted(items, key=itemgetter('name'))
+    return items
+
 
 ''' MAILS '''
 

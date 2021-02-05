@@ -13,6 +13,7 @@ from tkinter import *
 from ttkwidgets.frames import Balloon
 from tkinter import filedialog
 from tkinter import messagebox
+from tkinter import ttk
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
@@ -309,6 +310,10 @@ class Home_Window(Custom_Toplevel):
         # Mail sender button
         self.button2 = Button(self.menu_frame, text="Mail Sender", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Mail_Sender_Window))
         self.button2.pack(anchor="center", pady=self.buttons_y_padding)
+
+        # Verify Paychecks button
+        self.button3 = Button(self.menu_frame, text="Verify Paychecks", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Verificator_Window))
+        self.button3.pack(anchor="center", pady=self.buttons_y_padding)
 
         # "Back to login" Label (packed only if app is using db)
         if master.using_db:
@@ -867,7 +872,7 @@ class Mail_Sender_Window(Custom_Toplevel):
 
 class Verificator_Window(Custom_Toplevel):
     def __init__(self, master=None):
-        self.width = 550
+        self.width = 600
         self.height = 700
         super().__init__(master, self.width, self.height)
 
@@ -876,6 +881,8 @@ class Verificator_Window(Custom_Toplevel):
         self.margin = 15
 
         self.radio_buttons_val = IntVar()
+        self.choosen_drivedoc_val = StringVar()
+        self.choose_worksheet_val = StringVar()
 
         ############### ROW CONFIGURE
         self.grid_rowconfigure(0, minsize=self.margin) # empty
@@ -887,17 +894,24 @@ class Verificator_Window(Custom_Toplevel):
         self.grid_rowconfigure(6, minsize=self.margin * 2)  # empty
         self.grid_rowconfigure(7, minsize=self.margin * 3)  # badges label
         self.grid_rowconfigure(8, minsize=self.margin * 2)  # radio buttons
-        self.grid_rowconfigure(9, minsize=self.margin * 3)  # empty
-        self.grid_rowconfigure(10, minsize=self.margin)  # Gdrive logo and file label
+        self.grid_rowconfigure(9, minsize=self.margin * 2)  # empty
+        self.grid_rowconfigure(10, minsize=self.margin*4)  # Gdrive logo and label
+        self.grid_rowconfigure(11, minsize=self.margin * 15)  # Gdrive list and file data Frame
+        self.grid_rowconfigure(12, minsize=self.margin)  # Gdrive horizontal scrollbar
+        self.grid_rowconfigure(13, minsize=self.margin * 4)  # status circle
+        self.grid_rowconfigure(14, minsize=self.margin)  # verify button
+        self.grid_rowconfigure(15, minsize=self.margin)  # empty
 
         ############### COLUMN CONFIGURE
         self.grid_columnconfigure(0, minsize=self.margin) # empty
         self.grid_columnconfigure(1, minsize=self.margin) # back button
-        self.grid_columnconfigure(2, minsize=self.margin) # window start from here
+        self.grid_columnconfigure(2, minsize=self.margin*11) # window start from here (buttons and listbox)
         self.grid_columnconfigure(3, minsize=self.margin) # empty
         self.grid_columnconfigure(4, minsize=self.margin) # textboxes column
-        self.grid_columnconfigure(5, minsize=self.margin*2) # data column
-        self.grid_columnconfigure(6, minsize=self.margin)  # empty
+        self.grid_columnconfigure(5, minsize=self.margin)  # Gdrive Scrollbar
+        self.grid_columnconfigure(6, minsize=self.margin)  # data column
+        self.grid_columnconfigure(7, minsize=self.margin*10) # empty
+
 
         # define << back Button
         self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
@@ -908,38 +922,115 @@ class Verificator_Window(Custom_Toplevel):
         self.import_config_button.grid(row=3, column=2)
 
         # define config Textbox
-        self.config_txtbox = Entry(self, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
-        self.config_txtbox.grid(row=3, column=4, columnspan=2)
+        self.config_txtbox = Entry(self, width=60, state=DISABLED, disabledbackground=appLib.color_light_orange)
+        self.config_txtbox.grid(row=3, column=4, columnspan=4)
 
         # define file select Button
         self.check_file_button = Button(self, width=20, text="File da Controllare")
         self.check_file_button.grid(row=5, column=2)
 
         # define file_to_check Textbox
-        self.check_file_txtbox = Entry(self, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
-        self.check_file_txtbox.grid(row=5, column=4, columnspan=2)
+        self.check_file_txtbox = Entry(self, width=60, state=DISABLED, disabledbackground=appLib.color_light_orange)
+        self.check_file_txtbox.grid(row=5, column=4, columnspan=4)
 
         # define where_badges Label
         self.where_badges_label = Label(self, text="Dove sono i Cartellini?", font=("Calibri", 20, "bold"), fg=appLib.color_orange, bg=appLib.default_background)
-        self.where_badges_label.grid(row=7, column=2, columnspan=4)
+        self.where_badges_label.grid(row=7, column=2, columnspan=6)
 
         # define badges Radio Buttons
         self.radio_BusinessCat = Radiobutton(self, text="Cartella di BusinessCat", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=1, bg=appLib.default_background)
-        self.radio_BusinessCat.grid(row=8, column=2, columnspan=4, sticky="w")
+        self.radio_BusinessCat.grid(row=8, column=2, columnspan=6, sticky="w")
         self.radio_BusinessCat.select() # selected by default
 
         self.radio_Other = Radiobutton(self, text="Altro (Seleziona)", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=2, bg=appLib.default_background)
-        self.radio_Other.grid(row=8, column=2, columnspan=4, sticky="e")
+        self.radio_Other.grid(row=8, column=2, columnspan=6, sticky="e")
 
-        # define google drive img Label
-        self.gdrive_img_label = Label(self, width=4, height=2, bg=appLib.color_green)
-        self.gdrive_img_label.grid(row=10, column=1, columnspan=3, sticky="e")
+        # define google drive img Label and text Label
+        self.drive_logo = PIL.Image.open("../config_files/imgs/drive_logo.ico")
+        self.drive_logo = self.drive_logo.resize((38,38))
+        self.drive_logo = PIL.ImageTk.PhotoImage(self.drive_logo)
+        self.gdrive_frame = Frame(self, bg=appLib.default_background)
+        self.gdrive_frame.grid(row=10, column=2, columnspan=4, sticky="nsew")
+        self.gdrive_img_label = Label(self.gdrive_frame,image=self.drive_logo, bg=appLib.default_background).place(rely=0.58,anchor="w")
+        self.gdrive_text_label = Label(self.gdrive_frame, text="Fogli di Calcolo sul tuo Drive", font=("Calibri", 12, "bold"), fg=appLib.color_orange, bg=appLib.default_background).place(relx=0.50, rely=0.55,anchor="center")
+
+        # define Gdrive files Listbox
+        self.gdrive_yscrollbar = Scrollbar(self, orient=VERTICAL)
+        self.gdrive_yscrollbar.grid(row=11, column=5, rowspan=3, sticky="nsw")
+        self.gdrive_xscrollbar = Scrollbar(self, orient=HORIZONTAL)
+        self.gdrive_xscrollbar.grid(row=14, column=2, columnspan=3, sticky="ew")
+        self.gdrive_listbox = Listbox(self, {"font":("Calibri",12), "yscrollcommand":self.gdrive_yscrollbar.set, "xscrollcommand":self.gdrive_xscrollbar.set})
+        self.gdrive_listbox.grid(row=11, column=2, columnspan=3, rowspan=3, sticky="nsew")
+        self.gdrive_yscrollbar.config(command=self.gdrive_listbox.yview)
+        self.gdrive_xscrollbar.config(command=self.gdrive_listbox.xview)
+        self.gdrive_listbox.bind("<<ListboxSelect>>", lambda event: self.set_choosen_file_from_list(event))
+        self.refresh_gdrive_values()
+
+        # define file data Frame
+        self.file_data_frame = Frame(self, bg=appLib.default_background)
+        self.file_data_frame.grid(row=11, column=6, columnspan=3, sticky="nsew")
 
         # define choosen file Label
-        self.choosen_file_label = Label(self, text="File da Comparare", font=("Calibri", 12, "bold"), bg=appLib.default_background)
-        self.choosen_file_label.grid(row=10, column=5, columnspan=2, sticky="nsew")
+        self.choosen_file_label = Label(self.file_data_frame, text="File da Comparare", font=("Calibri", 14, "bold"), bg=appLib.default_background).pack(pady=(0,5))
+
+        # define selected file Label
+        self.selected_file = Label(self.file_data_frame, width=28, text="<< Seleziona", font=("Calibri", 12), bg=appLib.default_background)
+        self.selected_file.pack(pady=(0,20))
+
+        # define worksheet Label
+        self.choose_worksheet_label = Label(self.file_data_frame, text="Scheda dei dati", font=("Calibri", 14, "bold"), bg=appLib.default_background).pack(pady=(0,5))
+
+        # define worksheet Combobox
+        self.choose_worksheet_combobox = ttk.Combobox(self.file_data_frame, width=28, textvariable=self.choose_worksheet_val)
+        self.choose_worksheet_combobox.pack()
+        self.populate_sheetnames_combobox(["GENNAIO", "FEBBRAIO"])
+        self.choose_worksheet_combobox.current(0)
+        self.choose_worksheet_combobox.bind("<<ComboboxSelected>>", lambda event: self.set_choosen_sheet_from_combobox())
+
+        # status circle
+        self.canvas_frame = Frame(self, height=64, width=32, bg=appLib.default_background)
+        self.canvas_frame.grid(row=12, column=6, columnspan=2, rowspan=2)
+        self.canvas_frame.update()
+        self.canvas = Canvas(self.canvas_frame, width=self.canvas_frame.winfo_width(), height=self.canvas_frame.winfo_height()/2, highlightthickness=0, bg=appLib.default_background)
+        self.canvas.grid()
+        self.canvas_frame.update()
+        top_left_coord = [0, 0]
+        bottom_right_coord = [self.canvas.winfo_width()-1, self.canvas.winfo_height()-1]
+        self.status_circle = self.canvas.create_oval(top_left_coord, bottom_right_coord, outline="", fill=appLib.color_green)
+        self.circle_label = Label(self.canvas_frame, text="Pronto", font=("Calibri", 10, "bold"), fg=appLib.color_green, bg=appLib.default_background)
+        self.circle_label.grid(pady=(2,4))
+
+        # define VERIFY Button
+        self.verify_button = Button(self, text="Verifica", width=16, height=1)
+        self.verify_button.grid(row=14, column=6, columnspan=2, sticky="ns")
 
 
+
+    """    METHODS    """
+
+    def refresh_gdrive_values(self):
+        files = appLib.get_sheetlist()
+        for f in files:
+            self.gdrive_listbox.insert(END, f["name"])
+
+    def populate_sheetnames_combobox(self, array):
+        self.choose_worksheet_combobox['values'] = [(*self.choose_worksheet_combobox['values'], val) for val in array]
+
+    def set_choosen_file_from_list(self, event):
+        selection = event.widget.curselection()
+        if selection:
+            index = selection[0]
+            data = event.widget.get(index)
+            self.choosen_drivedoc_val.set(data)
+        else:
+            self.choosen_drivedoc_val.set("<< Seleziona")
+
+        if len(self.choosen_drivedoc_val.get()) > 26:
+            self.choosen_drivedoc_val.set(self.choosen_drivedoc_val.get().replace(" ", "\n", 2))
+        self.selected_file.config(text=self.choosen_drivedoc_val.get())
+
+    def set_choosen_sheet_from_combobox(self):
+        self.choose_worksheet_val.set(self.choose_worksheet_combobox.get())
 
 
 if __name__ == "__main__":
@@ -950,6 +1041,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    #app = Home_Window(root)
-    app = Verificator_Window(root)
+    app = Home_Window(root)
     app.mainloop()
