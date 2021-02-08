@@ -884,6 +884,16 @@ class Verificator_Window(Custom_Toplevel):
         self.choosen_drivedoc_val = StringVar()
         self.choose_worksheet_val = StringVar()
 
+        # controller class
+        self.Controller = appLib.PaycheckController()
+
+        # Radio Buttons values
+        self.radio_values = {
+            0: "CARTELLINI",
+            1: lambda: filedialog.askdirectory(initialdir=os.getcwd(), title="Select Badges Directory")
+        }
+
+
         ############### ROW CONFIGURE
         self.grid_rowconfigure(0, minsize=self.margin) # empty
         self.grid_rowconfigure(1, minsize=self.margin)  # back button
@@ -914,19 +924,26 @@ class Verificator_Window(Custom_Toplevel):
 
 
         # define << back Button
-        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button = Button(self, text="<<", width=2, height=1, command=lambda:self.open_new_window(master, self.prior_window))
         self.back_button.grid(row=1, column=1, sticky="w")
 
         # define import configuration Button
-        self.import_config_button = Button(self, width=20, text="Importa Configurazione")
+        self.import_config_button = Button(self, width=20, text="Importa Configurazione", command=lambda: [self.changeConfigContent(self.config_txtbox.get().split(" ")[1]), self.Controller.create_config_from_csv(self.config_txtbox.get())])
         self.import_config_button.grid(row=3, column=2)
 
         # define config Textbox
         self.config_txtbox = Entry(self, width=60, state=DISABLED, disabledbackground=appLib.color_light_orange)
         self.config_txtbox.grid(row=3, column=4, columnspan=4)
 
+        # verify conversion_config path
+        if os.path.exists(self.Controller.conversion_table_path):
+            self.config_txtbox.configure(state='normal')
+            self.config_txtbox.delete(0, "end")
+            self.config_txtbox.insert(0, f"CONFIGURAZIONE TROVATA >> {self.Controller.conversion_table_path}")
+            self.config_txtbox.configure(state='disabled')
+
         # define file select Button
-        self.check_file_button = Button(self, width=20, text="File da Controllare")
+        self.check_file_button = Button(self, width=20, text="File da Controllare", command=lambda:self.changeCheckContent(self.check_file_txtbox))
         self.check_file_button.grid(row=5, column=2)
 
         # define file_to_check Textbox
@@ -940,10 +957,9 @@ class Verificator_Window(Custom_Toplevel):
         # define badges Radio Buttons
         self.radio_BusinessCat = Radiobutton(self, text="Cartella di BusinessCat", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=1, bg=appLib.default_background)
         self.radio_BusinessCat.grid(row=8, column=2, columnspan=6, sticky="w")
-        self.radio_BusinessCat.select() # selected by default
-
         self.radio_Other = Radiobutton(self, text="Altro (Seleziona)", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=2, bg=appLib.default_background)
         self.radio_Other.grid(row=8, column=2, columnspan=6, sticky="e")
+        self.radio_buttons_val.set(1)
 
         # define google drive img Label and text Label
         self.drive_logo = PIL.Image.open("../config_files/imgs/drive_logo.ico")
@@ -983,7 +999,7 @@ class Verificator_Window(Custom_Toplevel):
         # define worksheet Combobox
         self.choose_worksheet_combobox = ttk.Combobox(self.file_data_frame, width=28, textvariable=self.choose_worksheet_val)
         self.choose_worksheet_combobox.pack()
-        self.populate_sheetnames_combobox(["GENNAIO", "FEBBRAIO"])
+        self.populate_sheetnames_combobox([])
         self.choose_worksheet_combobox.current(0)
         self.choose_worksheet_combobox.bind("<<ComboboxSelected>>", lambda event: self.set_choosen_sheet_from_combobox())
 
@@ -1001,9 +1017,8 @@ class Verificator_Window(Custom_Toplevel):
         self.circle_label.grid(pady=(2,4))
 
         # define VERIFY Button
-        self.verify_button = Button(self, text="Verifica", width=16, height=1)
+        self.verify_button = Button(self, text="Verifica", width=16, height=1, command=lambda:self.verify())
         self.verify_button.grid(row=14, column=6, columnspan=2, sticky="ns")
-
 
 
     """    METHODS    """
@@ -1031,6 +1046,48 @@ class Verificator_Window(Custom_Toplevel):
 
     def set_choosen_sheet_from_combobox(self):
         self.choose_worksheet_val.set(self.choose_worksheet_combobox.get())
+
+    def changeConfigContent(self, txtbox):
+        '''
+        change the content of a given Entry Object
+        '''
+
+        overwrite = True
+        if os.path.exists(self.Controller.conversion_table_path):
+            overwrite = messagebox.askyesno("Configurazione già presente!", "Esiste già una configurazione per i valori da estrarre, vuoi sceglierne un'altra?\n(ATTENZIONE: scegliendo 'SI' i dati di configurazione precedenti andranno persi)")
+
+        if overwrite:
+            filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",
+                                                  filetype=[("CSV files", "*.csv*")])
+            print(filename)
+            if not filename:
+                return
+
+            txtbox.configure(state='normal')
+            txtbox.delete(0, "end")
+            txtbox.insert(0, filename)
+            txtbox.configure(state='disabled')
+
+    def changeCheckContent(self, txtbox):
+        '''
+        change the content of a given Entry Object
+        '''
+        filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",
+                                              filetype=[("PDF Files", "*.pdf*")])
+        if not filename:
+            return
+
+        txtbox.configure(state='normal')
+        txtbox.delete(0, "end")
+        txtbox.insert(0, filename)
+        txtbox.configure(state='disabled')
+
+    def verify(self):
+        print("\n")
+        print("FILE TO CHECK >>", self.check_file_txtbox.get())
+        print("RADIO BUTTONS >>",self.radio_buttons_val.get())
+        print("SELECTED FILE FROM DRIVE >>",self.selected_file.cget("text"))
+        print("CHOOSEN SHEET >>", self.choose_worksheet_combobox.get())
 
 
 if __name__ == "__main__":

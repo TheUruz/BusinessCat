@@ -441,18 +441,21 @@ def check_registered(cursor, email):
 ''' CLASSES '''
 
 class PaycheckController():
-    def __init__(self, paychecks_to_check, badges_to_check):
+    def __init__(self):
         """
         paychecks_to_check (str) -> path to multiple pages pdf containing all paychecks to check
         badges_to_check (str) -> path to folder containing all badges files as .pdf
+        """
         """
         try:
             self.__validate_data(paychecks_to_check, badges_to_check)
         except Exception() as e:
             raise Exception(e)
+        """
 
-        self.badges_path = badges_to_check # path to CARTELLINI folder
-        self.paychecks_to_check = paychecks_to_check # lul_controllo
+        self.badges_path = "" # path to CARTELLINI folder
+        self.paychecks_to_check = "" # lul_controllo
+        self.conversion_table_path = "../config_files/conversion_table.json"
 
         self.verify_filename = "Verifica.xlsx" #name of the output verification xlsx
         self.highlight_error = "FFFFFFFF"
@@ -524,17 +527,19 @@ class PaycheckController():
                     ]
                 }
             }
-        self.config = self.__load_config()
+        self.config = self.__load_conversion_table()
+
+
 
 
     """ PRIVATE METHODS """
-    def __load_config(self):
+    def __load_conversion_table(self):
         """
         set PaycheckController configuration. with this configuration the program knows wich field
         extract from paychecks
         """
-        if os.path.exists("../config_files/conversion_table.json"):
-            with open("../config_files/conversion_table.json", "r") as f:
+        if os.path.exists(self.conversion_table_path):
+            with open(self.conversion_table_path, "r") as f:
                 return json.load(f)
         else:
             return copy.deepcopy(self.default_configuration)
@@ -550,6 +555,7 @@ class PaycheckController():
             raise Exception(f"Error: {badges_to_check} is empty!")
 
         return True
+
 
     """ PUBLIC METHODS """
     def create_config_from_csv(self, csv_path):
@@ -581,11 +587,21 @@ class PaycheckController():
         # setting self.config with parsed data
         self.config["col_codes"] = columns
 
-        with open("../config_files/conversion_table.json", "w") as f:
+        with open(self.conversion_table_path, "w") as f:
             f.write(json.dumps(self.config, indent=4, ensure_ascii=True))
 
         print(f"* * conversion_table.json created from this file >> {csv_path}")
+        self.config = self.__load_conversion_table()
 
+    # setters
+    def set_badges_path(self, path):
+        """setter for path to badges folder. it should contain .pdf files from every badge (splitted from BusinessCat)"""
+        self.badges_path = path
+
+    def set_paychecks_to_check_path(self, path):
+        """setter for path to paychecks to check. it should be a .pdf file"""
+
+    # main functions
     def paycheck_verification(self, create_Excel=False):
         PDF_file = self.paychecks_to_check
         total_content = {}
