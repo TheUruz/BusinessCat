@@ -510,7 +510,8 @@ class PaycheckController():
                         "Z00255",
                         "Z51010",
                         "Z00246",
-                        "Z51000"
+                        "Z51000",
+                        "000031"
                     ],
                     "T.F.R.": [
                         "quota t.f.r.",
@@ -888,6 +889,12 @@ class PaycheckController():
         badges_df.index.name = "LAVORATORI"
         paychecks_df.index.name = "LAVORATORI"
 
+        # fix wrong indexes in badges
+        badges_df = badges_df.rename(index={
+                                         'GUZMAN URENA ALEXANDER DE JE': 'GUZMAN URENA ALEXANDER DE JESUS',
+                                         'NUTU LOREDANA ADRIAN': 'NUTU LOREDANA ADRIANA'
+                                         })
+
         # uniform indexes
         badges_df.index = badges_df.index.str.upper()
         paychecks_df.index = paychecks_df.index.str.upper()
@@ -898,11 +905,6 @@ class PaycheckController():
         renaming = {key: key + CHECK_SUFFIX for key in common_df.columns.values}
         common_df = common_df.rename(columns=renaming)
 
-        # fix wrong indexes in badges
-        badges_df = badges_df.rename(index={'COBIANCHI MARCO': 'COBIANCHI MARCO GABRIELE',
-                                         'GUZMAN URENA ALEXANDER': 'GUZMAN URENA ALEXANDER DE JESUS',
-                                         'NUTU LOREDANA ADRIAN': 'NUTU LOREDANA ADRIANA'
-                                         })
 
         data_df = badges_df.merge(common_df, left_index=True, right_index=True)
         self.create_Excel(data_df, sheet_name="temp", transposed=False)

@@ -946,7 +946,7 @@ class Verificator_Window(Custom_Toplevel):
             self.config_txtbox.configure(state='disabled')
 
         # define file select Button
-        self.check_file_button = Button(self, width=20, text="File da Controllare", command=lambda:self.changeCheckContent(self.check_file_txtbox))
+        self.check_file_button = Button(self, width=20, text="LUL controllo", command=lambda:self.changeCheckContent(self.check_file_txtbox))
         self.check_file_button.grid(row=5, column=2)
 
         # define file_to_check Textbox
