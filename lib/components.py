@@ -884,13 +884,16 @@ class Verificator_Window(Custom_Toplevel):
         self.choosen_drivedoc_val = StringVar()
         self.choose_worksheet_val = StringVar()
 
+        self.downloaded_df = None
+        self.gdrive_filelist = []
+
         # controller class
         self.Controller = appLib.PaycheckController()
 
         # Radio Buttons values
         self.radio_values = {
-            0: "CARTELLINI",
-            1: lambda: filedialog.askdirectory(initialdir=os.getcwd(), title="Select Badges Directory")
+            1: "CARTELLINI",
+            2: ""
         }
 
 
@@ -957,7 +960,7 @@ class Verificator_Window(Custom_Toplevel):
         # define badges Radio Buttons
         self.radio_BusinessCat = Radiobutton(self, text="Cartella di BusinessCat", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=1, bg=appLib.default_background)
         self.radio_BusinessCat.grid(row=8, column=2, columnspan=6, sticky="w")
-        self.radio_Other = Radiobutton(self, text="Altro (Seleziona)", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=2, bg=appLib.default_background)
+        self.radio_Other = Radiobutton(self, text="Altro (Seleziona)", font=("Calibri", 12), padx=20, variable=self.radio_buttons_val, value=2, bg=appLib.default_background, command=lambda:self.set_choosen_radio())
         self.radio_Other.grid(row=8, column=2, columnspan=6, sticky="e")
         self.radio_buttons_val.set(1)
 
@@ -975,11 +978,12 @@ class Verificator_Window(Custom_Toplevel):
         self.gdrive_yscrollbar.grid(row=11, column=5, rowspan=3, sticky="nsw")
         self.gdrive_xscrollbar = Scrollbar(self, orient=HORIZONTAL)
         self.gdrive_xscrollbar.grid(row=14, column=2, columnspan=3, sticky="ew")
-        self.gdrive_listbox = Listbox(self, {"font":("Calibri",12), "yscrollcommand":self.gdrive_yscrollbar.set, "xscrollcommand":self.gdrive_xscrollbar.set})
+        self.gdrive_listbox = Listbox(self, {"font":("Calibri",12), "yscrollcommand":self.gdrive_yscrollbar.set, "xscrollcommand":self.gdrive_xscrollbar.set, "activestyle":"none"})
         self.gdrive_listbox.grid(row=11, column=2, columnspan=3, rowspan=3, sticky="nsew")
         self.gdrive_yscrollbar.config(command=self.gdrive_listbox.yview)
         self.gdrive_xscrollbar.config(command=self.gdrive_listbox.xview)
-        self.gdrive_listbox.bind("<<ListboxSelect>>", lambda event: self.set_choosen_file_from_list(event))
+        #self.gdrive_listbox.bind("<<ListboxSelect>>", lambda event: self.set_choosen_file_from_list(event))
+        self.gdrive_listbox.bind("<Double-1>", lambda event: self.set_choosen_file_from_list(event))
         self.refresh_gdrive_values()
 
         # define file data Frame
@@ -997,11 +1001,9 @@ class Verificator_Window(Custom_Toplevel):
         self.choose_worksheet_label = Label(self.file_data_frame, text="Scheda dei dati", font=("Calibri", 14, "bold"), bg=appLib.default_background).pack(pady=(0,5))
 
         # define worksheet Combobox
-        self.choose_worksheet_combobox = ttk.Combobox(self.file_data_frame, width=28, textvariable=self.choose_worksheet_val)
+        self.choose_worksheet_combobox = ttk.Combobox(self.file_data_frame, width=28, textvariable=self.choose_worksheet_val, state="readonly")
         self.choose_worksheet_combobox.pack()
-        self.populate_sheetnames_combobox([])
-        self.choose_worksheet_combobox.current(0)
-        self.choose_worksheet_combobox.bind("<<ComboboxSelected>>", lambda event: self.set_choosen_sheet_from_combobox())
+        self.choose_worksheet_combobox.bind("<<ComboboxSelected>>", lambda event: self.choose_worksheet_val.set(self.choose_worksheet_combobox.get()))
 
         # status circle
         self.canvas_frame = Frame(self, height=64, width=32, bg=appLib.default_background)
@@ -1027,25 +1029,63 @@ class Verificator_Window(Custom_Toplevel):
         files = appLib.get_sheetlist()
         for f in files:
             self.gdrive_listbox.insert(END, f["name"])
+        self.gdrive_filelist = files
 
-    def populate_sheetnames_combobox(self, array):
+    def __populate_sheetnames_combobox(self, array):
         self.choose_worksheet_combobox['values'] = [(*self.choose_worksheet_combobox['values'], val) for val in array]
 
     def set_choosen_file_from_list(self, event):
+
         selection = event.widget.curselection()
         if selection:
             index = selection[0]
             data = event.widget.get(index)
-            self.choosen_drivedoc_val.set(data)
-        else:
+
+            valid = messagebox.askyesno("Conferma", f"{data} è il file che vuoi indicare come riferimento?")
+
+            if valid:
+
+                # set status circle and label in download
+                self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
+                self.circle_label.config(text="Attendi", fg=appLib.color_yellow)
+                self.update()
+
+                # set the choosen filename as the file to be downloaded
+                self.choosen_drivedoc_val.set(data)
+
+                # find id of the document based on name
+                file_ID = None
+                for doc in self.gdrive_filelist:
+                    if doc["name"] == self.choosen_drivedoc_val.get():
+                        file_ID = doc["id"]
+                if not file_ID:
+                    raise Exception("Nessun documento sul Drive (id) corrisponde al nome scelto!")
+
+                # set downloaded_df
+                self.downloaded_df = appLib.get_df_bytestream(file_ID)
+
+                # populate combobox
+                sheetnames = appLib.get_sheetnames_from_bytes(self.downloaded_df)
+                self.__populate_sheetnames_combobox(sheetnames)
+
+                if len(self.choosen_drivedoc_val.get()) > 26:
+                    self.choosen_drivedoc_val.set(self.choosen_drivedoc_val.get().replace(" ", "\n", 2))
+                self.selected_file.config(text=self.choosen_drivedoc_val.get())
+
+                # set status circle and label in download
+                self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
+                self.circle_label.config(text="Pronto", fg=appLib.color_green)
+                self.update()
+                return
+
             self.choosen_drivedoc_val.set("<< Seleziona")
+            self.downloaded_df = None
 
-        if len(self.choosen_drivedoc_val.get()) > 26:
-            self.choosen_drivedoc_val.set(self.choosen_drivedoc_val.get().replace(" ", "\n", 2))
-        self.selected_file.config(text=self.choosen_drivedoc_val.get())
-
-    def set_choosen_sheet_from_combobox(self):
-        self.choose_worksheet_val.set(self.choose_worksheet_combobox.get())
+    def set_choosen_radio(self):
+        path = filedialog.askdirectory(initialdir=os.getcwd(), title="Select Badges Directory")
+        if not path:
+            return
+        self.radio_values[2] = path
 
     def changeConfigContent(self, txtbox):
         '''
@@ -1059,9 +1099,10 @@ class Verificator_Window(Custom_Toplevel):
         if overwrite:
             filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",
                                                   filetype=[("CSV files", "*.csv*")])
-            print(filename)
             if not filename:
                 return
+
+            self.Controller.create_config_from_csv(filename)
 
             txtbox.configure(state='normal')
             txtbox.delete(0, "end")
@@ -1083,12 +1124,50 @@ class Verificator_Window(Custom_Toplevel):
         txtbox.configure(state='disabled')
 
     def verify(self):
-        print("\n")
-        print("FILE TO CHECK >>", self.check_file_txtbox.get())
-        print("RADIO BUTTONS >>",self.radio_buttons_val.get())
-        print("SELECTED FILE FROM DRIVE >>",self.selected_file.cget("text"))
-        print("CHOOSEN SHEET >>", self.choose_worksheet_combobox.get())
 
+        if os.path.exists(self.Controller.verify_filename):
+            check_input = messagebox.askyesno("File Esistente", f"il file {self.Controller.verify_filename} esiste già, vuoi crearne uno nuovo?")
+            if check_input:
+                os.remove(self.Controller.verify_filename)
+            else:
+                return
+
+        try:
+            # get values from window
+            self.Controller.set_paychecks_to_check_path(self.check_file_txtbox.get())
+            rb_val = self.radio_buttons_val.get()
+            self.Controller.set_badges_path(self.radio_values[rb_val])
+            choosen_sheet = self.choose_worksheet_combobox.get()
+
+            # verify values
+            valid = self.Controller.validate_data()
+            if valid:
+                # set status circle and label back to ready
+                self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
+                self.circle_label.config(text="Verifica in corso", fg=appLib.color_yellow)
+                self.update()
+
+                self.Controller.paycheck_verification()
+                self.Controller.badges_verification()
+                self.Controller.compare_badges_to_paychecks()
+                self.Controller.compare_paychecks_to_drive(df_bytestream=self.downloaded_df, sheet=choosen_sheet)
+
+                # set status circle and label back to ready
+                self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
+                self.circle_label.config(text="Pronto", fg=appLib.color_green)
+                self.update()
+
+                openfile = messagebox.askyesno("Verifica terminata!", "Vuoi aprire il file di risulta?")
+                if openfile:
+                    os.system("start"+ " " + self.Controller.verify_filename)
+
+        except Exception as e:
+            messagebox.showerror("Errore", e)
+            # set status circle and label back to ready
+            self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
+            self.circle_label.config(text="Errore", fg=appLib.color_red)
+            self.update()
+            raise
 
 if __name__ == "__main__":
     root = Tk()

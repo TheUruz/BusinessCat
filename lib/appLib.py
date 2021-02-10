@@ -282,17 +282,13 @@ def check_paycheck_badges():
 
     return check
 
+def get_sheetnames_from_bytes(bytes_):
+    wb = openpyxl.load_workbook(bytes_)
+    sheetnames = wb.sheetnames
+    return sheetnames
+
 
 ''' GOOGLE API METHODS '''
-
-def load_google_config():
-    try:
-        with open(google_config_path, "r") as f:
-            config = json.load(f)
-    except:
-        raise Exception("Cannot find Google user config file")
-
-    return config
 
 def authenticate(func):
     def auth_wrapper(*args, **kwargs):
@@ -333,14 +329,14 @@ def create_auth_session(credentials=creds):
 def build_service(service, version="v3"):
     return build(service, version, credentials=creds)
 
-def get_comparison_df(month):
+def get_df_bytestream(ID):
     """
-    get google sheet for comparison. return it as a pandas dataframe
+    get google sheet for comparison. return it as a bytestream
     """
-    google_config = load_google_config()
     service = build_service("drive")
     conversion_table = service.about().get(fields="exportFormats").execute()
-    request = service.files().export_media(fileId=google_config["Drive_lookup"]["ID"], mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    request = service.files().export_media(fileId=ID,
+                                           mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     fh = io.BytesIO()
 
     # download file bytestream
@@ -349,8 +345,15 @@ def get_comparison_df(month):
     while not done:
         status, done = downloader.next_chunk()
 
+    return fh
+
+def get_comparison_df(bytestream, month):
+    """
+    parse bytestream as a pandas dataframe
+    """
+
     # parse bytestream into df
-    df = pd.read_excel(fh, sheet_name=month.upper())
+    df = pd.read_excel(bytestream, sheet_name=month.upper(), index_col=0)
     return df
 
 def get_sheetlist():
@@ -527,10 +530,9 @@ class PaycheckController():
                     ]
                 }
             }
-        self.config = self.__load_conversion_table()
+        self.config = None
 
-
-
+        self.__load_conversion_table()
 
     """ PRIVATE METHODS """
     def __load_conversion_table(self):
@@ -540,21 +542,10 @@ class PaycheckController():
         """
         if os.path.exists(self.conversion_table_path):
             with open(self.conversion_table_path, "r") as f:
-                return json.load(f)
+                self.config = json.load(f)
+                return
         else:
             return copy.deepcopy(self.default_configuration)
-
-    def __validate_data(self, paychecks_to_check, badges_to_check):
-        if not os.path.exists(paychecks_to_check):
-            raise Exception(f"Error: cannot find {paychecks_to_check}")
-        if not os.path.exists(badges_to_check):
-            raise Exception(f"Error: cannot find {badges_to_check}")
-        if not os.path.isdir(badges_to_check):
-            raise Exception(f"Error: {badges_to_check} is not a folder")
-        if len(os.listdir(badges_to_check)) < 1:
-            raise Exception(f"Error: {badges_to_check} is empty!")
-
-        return True
 
 
     """ PUBLIC METHODS """
@@ -591,7 +582,21 @@ class PaycheckController():
             f.write(json.dumps(self.config, indent=4, ensure_ascii=True))
 
         print(f"* * conversion_table.json created from this file >> {csv_path}")
-        self.config = self.__load_conversion_table()
+        self.__load_conversion_table()
+
+    def validate_data(self):
+        if not self.paychecks_to_check:
+            raise Exception("Error: paycheck to check not specified")
+        if not os.path.exists(self.paychecks_to_check):
+            raise Exception(f"Error: cannot find {self.paychecks_to_check}")
+        if not os.path.exists(self.badges_path):
+            raise Exception(f"Error: cannot find {self.badges_path}")
+        if not os.path.isdir(self.badges_path):
+            raise Exception(f"Error: {self.badges_path} is not a folder")
+        if len(os.listdir(self.badges_path)) < 1:
+            raise Exception(f"Error: {self.badges_path} is empty!")
+
+        return True
 
     # setters
     def set_badges_path(self, path):
@@ -600,9 +605,10 @@ class PaycheckController():
 
     def set_paychecks_to_check_path(self, path):
         """setter for path to paychecks to check. it should be a .pdf file"""
+        self.paychecks_to_check = path
 
     # main functions
-    def paycheck_verification(self, create_Excel=False):
+    def paycheck_verification(self, create_Excel=True):
         PDF_file = self.paychecks_to_check
         total_content = {}
 
@@ -727,7 +733,7 @@ class PaycheckController():
             self.create_Excel(total_content, sheet_name)
             print(f"File {self.verify_filename} generato con successo, {sheet_name} aggiunto al suo interno")
 
-    def badges_verification(self, create_Excel=False):
+    def badges_verification(self, create_Excel=True):
 
         def parse_decimal_time(decimal_time):
 
@@ -972,14 +978,15 @@ class PaycheckController():
         styled_df.to_excel("test.xlsx", engine="openpyxl", index=True)
         """
 
-    def compare_paychecks_to_drive(self, month, keep_refer_values=True):
+    def compare_paychecks_to_drive(self, df_bytestream, sheet, keep_refer_values=True):
 
         CHECK_SUFFIX = " DRIVE"
-        drive_df = get_comparison_df(month)
+        drive_df = get_comparison_df(df_bytestream, sheet).fillna(0)
         paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
 
         # set indexes name
         paychecks_df.index.name = "LAVORATORI"
+        drive_df.index.name = "LAVORATORI"
 
         # uniform indexes
         drive_df.index = drive_df.index.str.upper()
@@ -990,8 +997,8 @@ class PaycheckController():
         common_df = drive_df[list(common_columns)].copy()
         renaming = {key: key + CHECK_SUFFIX for key in common_df.columns.values}
         common_df = common_df.rename(columns=renaming)
-
         data_df = paychecks_df.merge(common_df, left_index=True, right_index=True)
+
         self.create_Excel(data_df, sheet_name="temp", transposed=False)
 
         destination_workbook = openpyxl.load_workbook(self.verify_filename)
@@ -1059,4 +1066,4 @@ class PaycheckController():
         ws.title = "Verifica Buste Paga"
         destination_workbook.save(self.verify_filename)
 
-        print(f">> PAYCHECKS COMPARED WITH DRIVE {month} VALUES SUCCESSFULLY")
+        print(f">> PAYCHECKS COMPARED WITH DRIVE {sheet} VALUES SUCCESSFULLY")
