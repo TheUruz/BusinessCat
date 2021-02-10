@@ -483,6 +483,7 @@ class PaycheckController():
                     "003951",
                     "002099",
                     "002101",
+                    "002100",
                     "PLACEHOLDER1",
                     "PLACEHOLDER2",
                     "F09080",
@@ -499,7 +500,9 @@ class PaycheckController():
                     "ZP8138",
                     "ZP8130",
                     "003450",
+                    "003411",
                     "000283",
+                    "000031",
                     "quota t.f.r.",
                     "quota t.f.r. a fondi"
                 ],
@@ -522,6 +525,7 @@ class PaycheckController():
                     ],
                     "Cessione 1/5": [
                         "002101",
+                        "002100",
                         "003951",
                         "002099"
                     ],
