@@ -1123,14 +1123,16 @@ class Verificator_Window(Custom_Toplevel):
 
     def verify(self):
 
-        if os.path.exists(self.Controller.verify_filename):
-            check_input = messagebox.askyesno("File Esistente", f"il file {self.Controller.verify_filename} esiste già, vuoi crearne uno nuovo?")
-            if check_input:
-                os.remove(self.Controller.verify_filename)
-            else:
-                return
-
         try:
+
+            if os.path.exists(self.Controller.verify_filename):
+                check_input = messagebox.askyesno("File Esistente", f"il file {self.Controller.verify_filename} esiste già, vuoi crearne uno nuovo?")
+                if check_input:
+                    os.remove(self.Controller.verify_filename)
+                else:
+                    return
+
+
             # get values from window
             self.Controller.set_paychecks_to_check_path(self.check_file_txtbox.get())
             rb_val = self.radio_buttons_val.get()

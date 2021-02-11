@@ -894,8 +894,8 @@ class PaycheckController():
     def compare_badges_to_paychecks(self, keep_refer_values=True):
 
         CHECK_SUFFIX = " PAYCHECK"
-        badges_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Cartellini", index_col=0).fillna(0)
-        paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
+        badges_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Cartellini", index_col=0)
+        paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0)
 
         # set indexes name
         badges_df.index.name = "LAVORATORI"
@@ -951,9 +951,13 @@ class PaycheckController():
                 for data in worker_check:
                     check_val = data + CHECK_SUFFIX
                     if CHECK_SUFFIX not in data and check_val in worker_check:
-                        if worker_check[data] - worker_check[check_val] != 0:
-                            worker_errors.append(data)
-                            worker_errors.append(check_val)
+
+                        if worker_check[data] == 0 and worker_check[check_val] == None:
+                            continue
+                        else:
+                            if (worker_check[data]>0 and worker_check[check_val] == None) or (worker_check[data] - worker_check[check_val] != 0):
+                                worker_errors.append(data)
+                                worker_errors.append(check_val)
 
                 if worker_errors:
                     # parse errors to cells
@@ -994,9 +998,9 @@ class PaycheckController():
 
     def compare_paychecks_to_drive(self, df_bytestream, sheet, keep_refer_values=True):
 
-        CHECK_SUFFIX = " PAYCHECK"
-        drive_df = get_comparison_df(df_bytestream, sheet).fillna(0)
-        paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
+        CHECK_SUFFIX = " DRIVE"
+        drive_df = get_comparison_df(df_bytestream, sheet)
+        paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0)
 
         # set indexes name
         paychecks_df.index.name = "LAVORATORI"
@@ -1007,11 +1011,18 @@ class PaycheckController():
         paychecks_df.index = paychecks_df.index.str.upper()
 
         # create df with all data
+        """
         common_columns = set(drive_df.columns.values).intersection(set(paychecks_df.columns.values))
         common_df = drive_df[list(common_columns)].copy()
         renaming = {key: key + CHECK_SUFFIX for key in common_df.columns.values}
         common_df = common_df.rename(columns=renaming)
         data_df = paychecks_df.merge(common_df, left_index=True, right_index=True)
+        """
+        common_columns = list(set(drive_df.columns.values).intersection(set(paychecks_df.columns.values)))
+        common_df = drive_df[common_columns]
+        common_df = common_df.rename(columns={key: key + CHECK_SUFFIX for key in common_df.columns.values})
+        data_df = pd.merge_ordered(left=common_df.reset_index(), right=paychecks_df.reset_index(), left_on="LAVORATORI", right_on="LAVORATORI", left_by="LAVORATORI").set_index("LAVORATORI").sort_index()
+        #data_df = pd.merge(paychecks_df, common_df, how="right", left_index=True, right_index=True).sort_index()
 
         self.create_Excel(data_df, sheet_name="temp", transposed=False)
 
