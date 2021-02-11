@@ -931,7 +931,7 @@ class Verificator_Window(Custom_Toplevel):
         self.back_button.grid(row=1, column=1, sticky="w")
 
         # define import configuration Button
-        self.import_config_button = Button(self, width=20, text="Importa Configurazione", command=lambda: [self.changeConfigContent(self.config_txtbox.get().split(" ")[1]), self.Controller.create_config_from_csv(self.config_txtbox.get())])
+        self.import_config_button = Button(self, width=20, text="Importa Configurazione", command=lambda: [self.changeConfigContent(self.config_txtbox), self.Controller.create_config_from_csv(self.config_txtbox.get())])
         self.import_config_button.grid(row=3, column=2)
 
         # define config Textbox
@@ -1047,7 +1047,7 @@ class Verificator_Window(Custom_Toplevel):
 
                 # set status circle and label in download
                 self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
-                self.circle_label.config(text="Attendi", fg=appLib.color_yellow)
+                self.circle_label.config(text="Recupero il file...", fg=appLib.color_yellow)
                 self.update()
 
                 # set the choosen filename as the file to be downloaded
@@ -1101,8 +1101,6 @@ class Verificator_Window(Custom_Toplevel):
                                                   filetype=[("CSV files", "*.csv*")])
             if not filename:
                 return
-
-            self.Controller.create_config_from_csv(filename)
 
             txtbox.configure(state='normal')
             txtbox.delete(0, "end")

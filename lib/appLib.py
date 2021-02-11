@@ -478,14 +478,15 @@ class PaycheckController():
                     "000282",
                     "003955",
                     "Z05031",
+                    "Z05075",
                     "ZP0001",
+                    "ZP0003",
                     "ZP0030",
                     "003951",
                     "002099",
                     "002101",
+                    "003802",
                     "002100",
-                    "PLACEHOLDER1",
-                    "PLACEHOLDER2",
                     "F09080",
                     "F09100",
                     "F09130",
@@ -494,7 +495,13 @@ class PaycheckController():
                     "Z50023",
                     "Z51000",
                     "Z51010",
+                    "Z05004",
+                    "Z05041",
+                    "Z05065",
+                    "Z05060",
+                    "ZP0029",
                     "000085",
+                    "000229",
                     "000086",
                     "ZP8134",
                     "ZP8138",
@@ -547,10 +554,11 @@ class PaycheckController():
         """
         if os.path.exists(self.conversion_table_path):
             with open(self.conversion_table_path, "r") as f:
-                self.config = json.load(f)
+                new_config = json.load(f)
+                self.config = new_config
                 return
         else:
-            return copy.deepcopy(self.default_configuration)
+            self.config = copy.deepcopy(self.default_configuration)
 
 
     """ PUBLIC METHODS """
@@ -558,6 +566,7 @@ class PaycheckController():
         """
         csv must have at least two columns 'Codice voce' and 'Descrizione voce'
         """
+        new_config = copy.deepcopy(self.config)
 
         with open(csv_path, 'rt')as f:
             df = pd.read_csv(f, sep=";")
@@ -572,7 +581,7 @@ class PaycheckController():
                     if not pd.isnull(row[val]):
                         parsed_row[val] = row[val]
 
-                if parsed_row['Codice voce'] not in self.config:
+                if parsed_row['Codice voce'] not in new_config["col_codes"]:
                     columns[parsed_row['Codice voce']] = parsed_row
                     columns[parsed_row['Codice voce']]['col_value'] = -1
 
@@ -580,14 +589,13 @@ class PaycheckController():
         columns["quota t.f.r."] = {"Descrizione voce": "Quota T.F.R.", "col_value": -1}
         columns["quota t.f.r. a fondi"] = {"Descrizione voce": "Quota T.F.R. a Fondi", "col_value": -1}
 
-        # setting self.config with parsed data
-        self.config["col_codes"] = columns
-
+        # setting new_config with parsed data and dumping it
+        new_config["col_codes"] = columns
         with open(self.conversion_table_path, "w") as f:
-            f.write(json.dumps(self.config, indent=4, ensure_ascii=True))
+            f.write(json.dumps(new_config, indent=4, ensure_ascii=True))
 
-        print(f"* * conversion_table.json created from this file >> {csv_path}")
         self.__load_conversion_table()
+        print(f"* * conversion_table.json created from this file >> {csv_path}")
 
     def validate_data(self):
         if not self.paychecks_to_check:
@@ -986,7 +994,7 @@ class PaycheckController():
 
     def compare_paychecks_to_drive(self, df_bytestream, sheet, keep_refer_values=True):
 
-        CHECK_SUFFIX = " DRIVE"
+        CHECK_SUFFIX = " PAYCHECK"
         drive_df = get_comparison_df(df_bytestream, sheet).fillna(0)
         paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0).fillna(0)
 
