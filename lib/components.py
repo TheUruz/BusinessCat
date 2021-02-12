@@ -1150,7 +1150,11 @@ class Verificator_Window(Custom_Toplevel):
                 self.Controller.paycheck_verification()
                 self.Controller.badges_verification()
                 self.Controller.compare_badges_to_paychecks()
-                self.Controller.compare_paychecks_to_drive(df_bytestream=self.downloaded_df, sheet=choosen_sheet)
+                problems = self.Controller.compare_paychecks_to_drive(df_bytestream=self.downloaded_df, sheet=choosen_sheet)
+
+                # verify continue
+                if problems["uncommon_indexes"]:
+                    messagebox.showwarning(f"ATTENZIONE - {problems['error']}", f"I seguenti lavoratori sul Drive non sono presenti tra le Buste Paga\n\n{problems['uncommon_indexes']}\n\n\nNON VERRANNO INSERITI NEL FILE DI RISULTA.")
 
                 # set status circle and label back to ready
                 self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)

@@ -996,10 +996,11 @@ class PaycheckController():
         styled_df.to_excel("test.xlsx", engine="openpyxl", index=True)
         """
 
-    def compare_paychecks_to_drive(self, df_bytestream, sheet, keep_refer_values=True):
+    def compare_paychecks_to_drive(self, df_bytestream, sheet, keep_refer_values=True, leave_blanks=False):
 
         CHECK_SUFFIX = " DRIVE"
         drive_df = get_comparison_df(df_bytestream, sheet)
+        drive_df = drive_df[drive_df.index.notnull()]
         paychecks_df = pd.read_excel(self.verify_filename, sheet_name="Verifica Buste Paga", index_col=0)
 
         # set indexes name
@@ -1010,24 +1011,46 @@ class PaycheckController():
         drive_df.index = drive_df.index.str.upper()
         paychecks_df.index = paychecks_df.index.str.upper()
 
-        # create df with all data
-        """
-        common_columns = set(drive_df.columns.values).intersection(set(paychecks_df.columns.values))
-        common_df = drive_df[list(common_columns)].copy()
-        renaming = {key: key + CHECK_SUFFIX for key in common_df.columns.values}
-        common_df = common_df.rename(columns=renaming)
-        data_df = paychecks_df.merge(common_df, left_index=True, right_index=True)
-        """
+        # check divergences on dataframes
+        problems = {"uncommon_indexes": [],"different_lenght": False, "error_string": ""}
+        uncommon_indexes = list(set(drive_df.index.values) - set(paychecks_df.index.values))
+        same_index_length = True if len(drive_df.index) - len(paychecks_df.index) == 0 else False
+        # if there are not hired people in drive_df
+        if (uncommon_indexes and not same_index_length):
+            problems["uncommon_indexes"] = uncommon_indexes
+            problems["error"] = "Non assunti sul Drive"
+        # if there are typos in drive_df
+        elif (uncommon_indexes and same_index_length):
+            problems["uncommon_indexes"] = uncommon_indexes
+            problems["error"] = "Errori di scrittura sul Drive"
+
+        # merge dataframes
         common_columns = list(set(drive_df.columns.values).intersection(set(paychecks_df.columns.values)))
         common_df = drive_df[common_columns]
         common_df = common_df.rename(columns={key: key + CHECK_SUFFIX for key in common_df.columns.values})
-        data_df = pd.merge_ordered(left=common_df.reset_index(), right=paychecks_df.reset_index(), left_on="LAVORATORI", right_on="LAVORATORI", left_by="LAVORATORI").set_index("LAVORATORI").sort_index()
-        #data_df = pd.merge(paychecks_df, common_df, how="right", left_index=True, right_index=True).sort_index()
-
+        #data_df = pd.merge_ordered(left=common_df.reset_index(), right=paychecks_df.reset_index(), left_on="LAVORATORI", right_on="LAVORATORI", left_by="LAVORATORI").set_index("LAVORATORI").sort_index()
+        data_df = paychecks_df.merge(common_df, left_index=True, right_index=True).sort_index()
         self.create_Excel(data_df, sheet_name="temp", transposed=False)
+
 
         destination_workbook = openpyxl.load_workbook(self.verify_filename)
         ws = destination_workbook["temp"]
+
+        # create empty rows for uncommon_indexes
+        if leave_blanks:
+            index_checkup = {k: v for k, v in enumerate(common_df.index.values)}
+            # add blank lines based on index_checkup
+            rows = list(enumerate(ws.iter_rows()))
+            added_rows = 0
+            for row in rows[::-1]:
+                i_ = row[0]+1
+                w_name = row[1][0].value
+                try:
+                    if index_checkup[i_-added_rows] != w_name:
+                        ws.insert_rows(i_+added_rows)
+                        added_rows += 1
+                except:
+                    pass
 
         # find column of columns to highlight
         headings = [row for row in ws.iter_rows()][0]
@@ -1053,7 +1076,7 @@ class PaycheckController():
                     val = row_values[matching[key]]
                     if isinstance(val, str) and "€" in val:
                         val = val.replace("€", "").replace("-", "").replace(",", ".").strip()
-                    worker_check[key] = float(val) if val else 0
+                        worker_check[key] = float(val) if val else 0
 
                 # find worker errors
                 for data in worker_check:
@@ -1092,3 +1115,4 @@ class PaycheckController():
         destination_workbook.save(self.verify_filename)
 
         print(f">> PAYCHECKS COMPARED WITH DRIVE {sheet} VALUES SUCCESSFULLY")
+        return problems
