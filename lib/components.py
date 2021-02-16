@@ -380,9 +380,9 @@ class Splitter_Window(Custom_Toplevel):
         self.paycheck_button.grid(row=0,column=0, padx=(self.margin*2,self.margin*2), pady=(0,0), sticky="w")
         self.paycheck_textbox = Entry(self.PAYCHECK_FRAME, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
         self.paycheck_textbox.grid(row=0, column=1, sticky="ew")
-        self.paycheck_checkbox = Checkbutton(self.PAYCHECK_FRAME, text="Le Buste Paga contengono il Cartellino", font=("Calibri", 10, "italic"), bg=appLib.default_background, variable=self.paycheck_var, command=self.mark_paycheck_checkbox)
+        self.paycheck_checkbox = Checkbutton(self.PAYCHECK_FRAME, text="Le Buste Paga contengono il Cartellino", font=("Calibri", 10, "italic"), bg=appLib.default_background, variable=self.paycheck_var, command=lambda:self.toggle_paycheck_checkbox(self.paycheck_var.get()))
         self.paycheck_checkbox.grid(row=1,column=1, padx=(self.margin*2,self.margin*2), pady=(0,0), sticky="w")
-        #self.paycheck_checkbox.setvar(name="paycheck_var", value=1) # set default
+        self.paycheck_checkbox.setvar(name="paycheck_var", value=1) # set default
 
         # define Badges data
         self.BADGES_FRAME = Frame(self, bg=appLib.default_background)
@@ -418,6 +418,9 @@ class Splitter_Window(Custom_Toplevel):
         self.status_label = Label(self, text="Pronto", font=("Calibri",12,"bold"), bg=appLib.default_background, fg=appLib.color_green)
         self.status_label.pack(pady=(0,self.margin))
         self.update()
+
+        # update based on defaults
+        self.toggle_paycheck_checkbox(self.paycheck_var.get())
 
 
     def __BADGES_FROM_PAYCHECKS(self, filename):
@@ -592,9 +595,7 @@ class Splitter_Window(Custom_Toplevel):
                             "ERRORE nella divisione dei cartellini\n"
                             "#######################################\n")
 
-    def mark_paycheck_checkbox(self):
-        # get checkbox status
-        checkbox_status = self.paycheck_var.get()
+    def toggle_paycheck_checkbox(self, checkbox_status):
 
         # if check was unchecked disable all badges elements
         if checkbox_status:
