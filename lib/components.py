@@ -421,6 +421,7 @@ class Splitter_Window(Custom_Toplevel):
 
         # update based on defaults
         self.toggle_paycheck_checkbox(self.paycheck_var.get())
+        self.check_send_mail()
 
 
     def __BADGES_FROM_PAYCHECKS(self, filename):
@@ -538,6 +539,7 @@ class Splitter_Window(Custom_Toplevel):
                 paycheck.save(f"{self.PAYCHECKS_PATH}/" + paycheck_owner + ".pdf")
 
     def __SPLIT_BADGES(self, file_to_split):
+        """ this method is used to split old type badges, badges are now mainly extracted throught __BADGES_FROM_PAYCHECKS """
         try:
 
             inputpdf = fitz.open(file_to_split)
@@ -686,12 +688,11 @@ class Splitter_Window(Custom_Toplevel):
         self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
         self.status_label.config(text="Pronto", fg=appLib.color_green)
 
-
-
         # check mail send button
         self.check_send_mail()
 
     def check_send_mail(self):
+        self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
         if self.done_badges and self.done_paycheck:
             self.button_SEND.config(state=NORMAL)
             return True
