@@ -4,6 +4,8 @@ import os
 import copy
 import uuid
 import json
+import shutil
+import fitz
 import pandas as pd
 from pandastable import Table, TableModel, config as tab_config
 from email.message import EmailMessage
@@ -344,80 +346,263 @@ class Home_Window(Custom_Toplevel):
 
 class Splitter_Window(Custom_Toplevel):
     def __init__(self, master=None):
-        self.width = 500
-        self.height = 420
+        self.width = 520
+        self.height = 480
         super().__init__(master, self.width, self.height)
 
+        self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "PDF Splitter")
+        self.margin = 15
+        self.paycheck_var = IntVar(self, name="paycheck_var")
+        self.PAYCHECKS_PATH = "BUSTE PAGA"
+        self.BADGES_PATH = "CARTELLINI"
 
         # verify paycheck and badges status
         self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
 
-        # define Canvas
-        self.canvas = Canvas(self, width = self.width, height = self.height, bg="white")
-        self.canvas.grid()
-
         # define back button
         self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
-        self.canvas.create_window(30,30, window=self.back_button)
+        self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
 
-        # define Logo
-        self.logo_image = PhotoImage(file=appLib.logo_path)
-        self.canvas.create_image((self.width/2), 80, image=self.logo_image)
+        # define BusinessCat logo
+        self.logo_frame = Frame(self,bg=appLib.default_background)
+        self.logo_frame.pack(fill="x", pady=(0,self.margin*2))
+        img = PIL.Image.open("../config_files/imgs/BusinessCat.png")
+        self.logo = img.resize((110,120))
+        self.Businesscat_logo = PIL.ImageTk.PhotoImage(self.logo)
+        self.businesscat_img_label = Label(self.logo_frame, image=self.Businesscat_logo, bg=appLib.default_background)
+        self.businesscat_img_label.pack()
 
-        # status_circle
-        raggio = 10
-        x_offset = 0    # tweak x offset to move circle horizontally
-        y_offset = 15   #tweak y offset to move circle vertically
-        top_left_coord = [(self.width/2) - raggio*2, (self.height/4)*3]
-        bottom_right_coord = [(self.width/2) + raggio*2, (self.height/4)*3 + raggio*4]
-        top_left_coord[0] += x_offset
-        bottom_right_coord[0] += x_offset
-        top_left_coord[1] += y_offset
-        bottom_right_coord[1] += y_offset
-        self.status_circle = self.canvas.create_oval(top_left_coord, bottom_right_coord, outline="", fill=appLib.color_green)
+        # define Paychecks data
+        self.PAYCHECK_FRAME = Frame(self, bg=appLib.default_background)
+        self.PAYCHECK_FRAME.pack(fill="x", pady=(0,5))
+        self.paycheck_button = Button(self.PAYCHECK_FRAME, text="Buste Paga", width=16, height=1, font=("Calibri", 11), command=lambda:self.changeContent(self.paycheck_textbox))
+        self.paycheck_button.grid(row=0,column=0, padx=(self.margin*2,self.margin*2), pady=(0,0), sticky="w")
+        self.paycheck_textbox = Entry(self.PAYCHECK_FRAME, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
+        self.paycheck_textbox.grid(row=0, column=1, sticky="ew")
+        self.paycheck_checkbox = Checkbutton(self.PAYCHECK_FRAME, text="Le Buste Paga contengono il Cartellino", font=("Calibri", 10, "italic"), bg=appLib.default_background, variable=self.paycheck_var, command=self.mark_paycheck_checkbox)
+        self.paycheck_checkbox.grid(row=1,column=1, padx=(self.margin*2,self.margin*2), pady=(0,0), sticky="w")
+        #self.paycheck_checkbox.setvar(name="paycheck_var", value=1) # set default
 
-        # define status label
-        self.status_label = self.canvas.create_text((self.width/2), (self.height - 30), text="Pronto", fill=appLib.color_green, font=("Calibri",12,"bold"))
+        # define Badges data
+        self.BADGES_FRAME = Frame(self, bg=appLib.default_background)
+        self.BADGES_FRAME.pack(fill="x", pady=(self.margin, self.margin))
+        self.badges_button = Button(self.BADGES_FRAME, text="Cartellini", width=16, height=1, font=("Calibri", 11), command=lambda:self.changeContent(self.badges_textbox))
+        self.badges_button.grid(row=0,column=0, padx=(self.margin*2,self.margin*2), pady=(0,5), sticky="w")
+        self.badges_textbox = Entry(self.BADGES_FRAME, width=50, state=DISABLED, disabledbackground=appLib.color_light_orange)
+        self.badges_textbox.grid(row=0, column=1, sticky="ew")
+
+        # define Buttons
+        self.BUTTONS_FRAME = Frame(self, bg=appLib.default_background)
+        self.BUTTONS_FRAME.pack(fill="x", pady=(self.margin,self.margin))
+        self.BUTTONS_FRAME.grid_columnconfigure(0, minsize=12, weight=1)
+        #self.BUTTONS_FRAME.grid_columnconfigure(1, minsize=12, weight=1)
+        self.BUTTONS_FRAME.grid_columnconfigure(2, minsize=12, weight=1)
+        self.button_START = Button(self.BUTTONS_FRAME, text="Dividi", width=12, height=1, command=lambda:appLib.START_in_Thread(self.splitting))
+        self.button_START.grid(row=0, column=0)
+        #self.button_CLEAR = Button(self.BUTTONS_FRAME, text="Pulisci", width=12, height=1, command=self.clearContent)
+        #self.button_CLEAR.grid(row=0, column=1)
+        self.button_SEND = Button(self.BUTTONS_FRAME, text="Invia per Email", width=12, height=1, state=DISABLED,command=lambda: self.open_new_window(master, Mail_Sender_Window))
+        self.button_SEND.grid(row=0, column=2)
+        self.check_send_mail() # check disable for button_SEND
+
+        # define Status_Circle
+        self.STATUS_CIRCLE_FRAME = Frame(self, bg=appLib.color_light_orange)
+        self.STATUS_CIRCLE_FRAME.pack()
+        self.canvas = Canvas(self.STATUS_CIRCLE_FRAME, width=55, height=55, highlightthickness=0, bg=appLib.default_background)
+        self.canvas.pack(fill="both", expand=True)
+        self.update()
+        topleft_coord = (5,5)
+        bottomright_coord = (self.canvas.winfo_width()-5, self.canvas.winfo_height()-5)
+        self.status_circle = self.canvas.create_oval(topleft_coord, bottomright_coord, outline="", fill=appLib.color_green)
+        self.status_label = Label(self, text="Pronto", font=("Calibri",12,"bold"), bg=appLib.default_background, fg=appLib.color_green)
+        self.status_label.pack(pady=(0,self.margin))
+        self.update()
 
 
-        ############################################### BROWSE FILES (TXTBOXES & BUTTONS)
-        paycheck_heights = 180
-        badges_heights = 240
+    def __BADGES_FROM_PAYCHECKS(self, filename):
+        inputpdf = fitz.open(filename)
 
-        # define Paycheck Textbox
-        self.paycheck_textbox = Entry(self.canvas, width = 40, state=DISABLED, disabledbackground=appLib.color_light_orange)
-        self.canvas.create_window((self.width/2) + 95, paycheck_heights, window=self.paycheck_textbox)
+        if not os.path.exists(self.BADGES_PATH):
+            os.mkdir(self.BADGES_PATH)
 
-        # define Badges Textbox
-        self.badges_textbox = Entry(self.canvas, width = 40, state=DISABLED, disabledbackground=appLib.color_light_orange)
-        self.canvas.create_window((self.width/2) + 95, badges_heights, window=self.badges_textbox)
+        full_name = ""
+        # per ogni pagina
+        for i in range(inputpdf.pageCount):
+            page = inputpdf.loadPage(i)
+            blocks = page.getTextBlocks()
+            blocks.sort(key=lambda block: block[1])
 
-        # define Browse Paycheck
-        self.button_explore = Button(self.canvas, text = "Scegli il file delle Buste", width = 20, height = 1, command = lambda:self.changeContent(self.paycheck_textbox))
-        self.canvas.create_window((self.width/4), paycheck_heights, window=self.button_explore)
+            # per ogni blocco di testo
+            for index, x in enumerate(blocks):
+                block_data = x[4].split("\n")
 
-        # define Browse Badges
-        self.button_explore = Button(self.canvas, text = "Scegli il file dei Cartellini", width = 20, height = 1, command = lambda:self.changeContent(self.badges_textbox))
-        self.canvas.create_window((self.width/4), badges_heights, window=self.button_explore)
+                # per ogni parola nel blocco di testo
+                for v in block_data:
+                    if "cognome" in v.lower():
 
+                        # retriving name
+                        try:
+                            name = blocks[index + 1][4].split("\n")[1]
+                            name = [w[0].upper() + w[1:].lower() for w in name.split(" ")]
+                        except IndexError:
+                            name = blocks[index + 2][4].split("\n")[1]
+                            name = [w[0].upper() + w[1:].lower() for w in name.split(" ")]
 
+                        current_name = ""
+                        for i_, word in enumerate(name):
+                            current_name += word + " "
+                        current_name = current_name[:-1]
 
-        ################################################# START /CLEAR BUTTONS
-        command_buttons_height = 290
+                        if "riepilogo" in current_name.lower():
+                            break
 
-        # define START button
-        self.button_START = Button(self.canvas, text = "Dividi", width = 12, height = 1, command=lambda:appLib.START_in_Thread(self.splitting))
-        self.canvas.create_window((self.width/5), command_buttons_height, window=self.button_START)
+                        # salva il cartellino
+                        if current_name != full_name and current_name != "Datasassunzione" and current_name:
+                            badge = fitz.Document()
+                            badge.insertPDF(inputpdf, from_page=i, to_page=i)
+                            badge.save(f"{self.BADGES_PATH}/" + current_name + ".pdf")
+                            full_name = current_name
 
-        # define CLEAR button
-        self.button_CLEAR = Button(self.canvas, text = "Pulisci", width = 12, height = 1, command=self.clearContent)
-        self.canvas.create_window((self.width/5 *2.5), command_buttons_height, window=self.button_CLEAR)
+    def __SPLIT_PAYCHECKS(self, file_to_split):
+        inputpdf = fitz.open(file_to_split)
+        check_name = ""
 
-        # define SEND button
-        self.button_SEND = Button(self.canvas, text="Invia per Email", width=12, height=1, state=DISABLED,command=lambda: self.open_new_window(master, Mail_Sender_Window))
-        self.canvas.create_window((self.width/5 *4), command_buttons_height, window=self.button_SEND)
-        self.check_send_mail()
+        # possible slots where the name is stored in the pdf {slot:array_split_at}
+        lookup_range = {
+            19: 1,
+            21: 1,
+            117: 0
+        }
+
+        # chech if file_to_split exists
+        if not os.path.exists(file_to_split):
+            raise Exception(f"File {file_to_split} inesistente!")
+
+        # create dir if it does not exists
+        if not os.path.exists(self.PAYCHECKS_PATH):
+            os.mkdir(self.PAYCHECKS_PATH)
+
+        # per ogni pagina
+        for i in range(inputpdf.pageCount):
+            page = inputpdf.loadPage(i)
+            blocks = page.getText("blocks")
+            blocks.sort(key=lambda block: block[1])  # sort vertically ascending
+
+            paycheck_owner = None
+
+            for index, b in enumerate(blocks):
+                # per ogni range in cui è possibile trovare il nome
+                for key in lookup_range:
+                    if index == key:
+
+                        name = b[4]
+
+                        if not name.startswith("<"):
+                            name = name.split('\n')[lookup_range[key]]
+
+                        if key != 117:
+                            if name != "Codicesdipendente" \
+                                    and name != "CodicesFiscale" \
+                                    and not name[0].isdigit() \
+                                    and not name.startswith("<"):
+                                name_ = name.split(" ")
+                                new_name = ""
+                                for word in name_:
+                                    new_name += word[0].upper() + word[1:].lower() + " "
+                                paycheck_owner = new_name[:-1]
+                        else:
+                            name_ = (name[12:]).split()[:-1]
+                            new_name = ""
+                            for word in name_:
+                                new_name += word[0].upper() + word[1:].lower() + " "
+                            paycheck_owner = new_name[:-1]
+
+            if not paycheck_owner or paycheck_owner == "Detrazioni":
+                print(f"Non ho trovato il proprietario della busta numero {i}, potrebbe essere un cartellino")
+                continue
+            else:
+                paycheck = fitz.Document()
+
+                # se il nome è lo stesso del foglio precedente salvo il pdf come due facciate
+                if paycheck_owner == check_name:
+                    paycheck.insertPDF(inputpdf, from_page=i - 1, to_page=i)
+                # altrimenti salvo solo la pagina corrente
+                else:
+                    paycheck.insertPDF(inputpdf, from_page=i, to_page=i)
+
+                check_name = paycheck_owner
+                paycheck.save(f"{self.PAYCHECKS_PATH}/" + paycheck_owner + ".pdf")
+
+    def __SPLIT_BADGES(self, file_to_split):
+        try:
+
+            inputpdf = fitz.open(file_to_split)
+
+            if not os.path.exists(file_to_split):
+                raise Exception(f"File {file_to_split} inesistente!")
+
+            # create dir if it does not exists
+            if not os.path.exists(self.BADGES_PATH):
+                os.mkdir(self.BADGES_PATH)
+
+            # per ogni pagina
+            for i in range(inputpdf.pageCount):
+                page = inputpdf.loadPage(i)
+                obj = page.getTextBlocks()
+                full_name = ""
+
+                # provo a cercare il nome in uno slot
+                try:
+                    for index, x in enumerate(obj[37]):
+                        if not str(x)[0].isdigit():
+                            name_arr = (x.split("\n")[0]).split(" ")
+
+                            for string in range(len(name_arr)):
+                                if name_arr[string]:
+                                    full_name += (name_arr[string][0].upper() + name_arr[string][1:].lower() + " ")
+
+                            full_name = (full_name[:-1])
+
+                    if not full_name:
+                        raise
+
+                # altrimenti lo cerco nell'altro
+                except:
+                    for index, x in enumerate(obj[36]):
+                        if not str(x)[0].isdigit():
+                            name_arr = (x.split("\n")[0]).split(" ")
+
+                            for string in range(len(name_arr)):
+                                if name_arr[string]:
+                                    full_name += (name_arr[string][0].upper() + name_arr[string][1:].lower() + " ")
+
+                            full_name = (full_name[:-1])
+
+                    if not full_name:
+                        raise
+
+                # salvo il cartellino
+                badge = fitz.Document()
+                badge.insertPDF(inputpdf, from_page=i, to_page=i)
+                badge.save(f"{self.BADGES_PATH}/" + full_name + ".pdf")
+
+        except:
+            raise Exception("#######################################\n"
+                            "ERRORE nella divisione dei cartellini\n"
+                            "#######################################\n")
+
+    def mark_paycheck_checkbox(self):
+        # get checkbox status
+        checkbox_status = self.paycheck_var.get()
+
+        # if check was unchecked disable all badges elements
+        if checkbox_status:
+            self.badges_button["state"]=DISABLED
+            self.badges_textbox.configure(disabledbackground=appLib.color_grey)
+        elif not checkbox_status:
+            self.badges_button["state"] = NORMAL
+            self.badges_textbox.configure(disabledbackground=appLib.color_light_orange)
 
     def changeContent(self, txtbox):
         '''
@@ -441,68 +626,73 @@ class Splitter_Window(Custom_Toplevel):
         self.paycheck_textbox.configure(state='disabled', disabledbackground=self.cget('bg'))
         self.badges_textbox.configure(state='disabled', disabledbackground=self.cget('bg'))
 
+    def gather_data(self):
+        to_return = {
+            "paychecks_path": self.paycheck_textbox.get(),
+            "badges_path": self.badges_textbox.get(),
+            "paychecks_checkbox": self.paycheck_var.get()
+        }
+        return to_return
+
     def splitting(self):
-        paycheck_path = self.paycheck_textbox.get()
-        badges_path = self.badges_textbox.get()
+        splitting_data = self.gather_data()
 
-        # verify paycheck and badges status
-        self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
-
-        # se ho già generato i file printo errore
-        if (self.done_paycheck and paycheck_path) and (self.done_badges and badges_path):
-            messagebox.showerror("Error", "File già divisi!")
-        elif (self.done_paycheck and paycheck_path) and not (self.done_badges and badges_path):
-            messagebox.showerror("Error", "Buste già divise!")
-        elif (self.done_badges and badges_path) and not (self.done_paycheck and paycheck_path):
-            messagebox.showerror("Error", "Cartellini già divisi!")
-
+        # remove directories conditionals
+        remove_dir = True
+        if os.path.exists(self.PAYCHECKS_PATH) or os.path.exists(self.BADGES_PATH):
+            remove_dir = messagebox.askyesno("File già esistenti", f"Una di queste cartelle\n\n{self.PAYCHECKS_PATH}\n{self.BADGES_PATH}\n\nè già presente. Procedere con questa operazione le eliminerà entrambe, vuoi continuare?\n\nSI CONSIGLIA DI SCEGLIERE NO E EFFETTUARNE UNA COPIA SE IN DUBBIO")
+        if remove_dir:
+            shutil.rmtree(self.PAYCHECKS_PATH, ignore_errors=True)
+            shutil.rmtree(self.BADGES_PATH, ignore_errors=True)
+            self.done_paycheck, self.done_badges = appLib.check_paycheck_badges()
         else:
-            # imposto lo stato di lavoro dello status_circle e della status_label
-            self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
-            self.canvas.itemconfig(self.status_label, fill=appLib.color_yellow, text="Sto Dividendo...")
+            return
 
-            if paycheck_path and not self.done_paycheck:
-                try:
-                    appLib.CREATE_BUSTE(paycheck_path, "BUSTE PAGA")
-                    self.paycheck_textbox.configure(disabledbackground=appLib.color_green)
-                    self.done_paycheck = True
-                except Exception as e:
-                    self.paycheck_textbox.configure(disabledbackground=appLib.color_red)
-                    self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
-                    self.canvas.itemconfig(self.status_label, fill=appLib.color_red, text="ERRORE")
-                    e = str(e).replace("#", "")
-                    messagebox.showerror("Error", e)
+        # imposto lo stato dello status_circle
+        self.canvas.itemconfig(self.status_circle, fill=appLib.color_yellow)
+        self.status_label.config(text="Sto Dividendo", fg=appLib.color_yellow)
 
-            if badges_path and not self.done_badges:
-                try:
-                    appLib.CREATE_CARTELLINI(badges_path, "CARTELLINI")
-                    self.badges_textbox.configure(disabledbackground=appLib.color_green)
-                    self.done_badges = True
-                except Exception as e:
-                    self.badges_textbox.configure(disabledbackground=appLib.color_red)
-                    self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
-                    self.canvas.itemconfig(self.status_label, fill=appLib.color_red, text="ERRORE")
-                    e = str(e).replace("#", "")
-                    messagebox.showerror("Error", e)
+        try:
 
-            # reimposto lo stato di lavoro dello status_circle
-            self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
-            self.canvas.itemconfig(self.status_label, fill=appLib.color_green, text="Pronto")
-
-            # end messages
-            if paycheck_path and self.done_paycheck and not self.done_badges:
-                messagebox.showinfo("Done", "Buste divise con successo!")
-            elif badges_path and self.done_badges and not self.done_paycheck:
-                messagebox.showinfo("Done", "Cartellini divisi con successo!")
-            elif (self.done_paycheck and self.done_badges) and paycheck_path or badges_path:
+            # CASE 1 (badge in paychecks in the same file)
+            if splitting_data["paychecks_checkbox"] == 1:
+                if not splitting_data["paychecks_path"]:
+                    raise Exception("Scegli il file prima di dividerlo!")
+                self.__SPLIT_PAYCHECKS(splitting_data["paychecks_path"])
+                self.__BADGES_FROM_PAYCHECKS(splitting_data["paychecks_path"])
                 messagebox.showinfo("Done", "File divisi con successo!")
+
+            # CASE 2 (badges and paychecks in two different files)
+            if splitting_data["paychecks_checkbox"] == 0:
+                if splitting_data["paychecks_path"]:
+                    self.__SPLIT_PAYCHECKS(splitting_data["paychecks_path"])
+                if splitting_data["badges_path"]:
+                    self.__SPLIT_BADGES(splitting_data["badges_path"])
+
+                if splitting_data["paychecks_path"] or splitting_data["badges_path"]:
+                    messagebox.showinfo("Done", "File divisi con successo!")
+                else:
+                    raise Exception("Non è stato specificato nessun file da dividere!")
+
+        except Exception as e:
+            self.canvas.itemconfig(self.status_circle, fill=appLib.color_red)
+            self.status_label.config(text="ERRORE", fg=appLib.color_red)
+            e = str(e).replace("#", "")
+            messagebox.showerror("Error", e)
+            return
+
+        # reimposto lo stato dello status_circle
+        self.canvas.itemconfig(self.status_circle, fill=appLib.color_green)
+        self.status_label.config(text="Pronto", fg=appLib.color_green)
+
+
 
         # check mail send button
         self.check_send_mail()
 
     def check_send_mail(self):
         if self.done_badges and self.done_paycheck:
-            self.button_SEND.config(state=ACTIVE)
+            self.button_SEND.config(state=NORMAL)
             return True
         else:
             return False
@@ -1172,6 +1362,7 @@ class Verificator_Window(Custom_Toplevel):
             self.circle_label.config(text="Errore", fg=appLib.color_red)
             self.update()
             raise
+
 
 if __name__ == "__main__":
     root = Tk()
