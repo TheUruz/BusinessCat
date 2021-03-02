@@ -1,12 +1,19 @@
 import os
 import copy
 import io
+import re
 import pickle
 import fitz # PyMuPDF
 import json
 import mysql
 import smtplib
 import openpyxl
+import xlrd
+import datetime
+import holidays
+import random
+import pandas as pd
+import numpy as np
 
 from openpyxl.utils.cell import get_column_letter
 from openpyxl.styles import PatternFill
@@ -19,7 +26,8 @@ from google.auth.transport.requests import Request, AuthorizedSession
 from email.message import EmailMessage
 from email.mime.text import MIMEText
 
-import pandas as pd
+
+
 
 # PATHS
 db_config_path = "../config_files/db/config.json"
@@ -902,3 +910,447 @@ class PaycheckController():
 
         print(f">> PAYCHECKS COMPARED WITH DRIVE {sheet} VALUES SUCCESSFULLY")
         return problems
+
+class BillingManager():
+    def __init__(self, badges_path):
+        self.bill_name = "Fattura di prova.xlsx"
+        self.badges_path = badges_path
+        self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
+        self.name_cell = "B5"
+        self.pairing_schema = {
+            "COD QTA": ["COD", "QTA"],
+            "ENT USC": ["ENT", "USC"],
+            "GIOR PROG": ["GIOR", "PROG"]
+        }
+
+        with open("../config_files/billing_profiles.json","r") as f:
+            self.billing_profiles = json.load(f)
+
+        # set billing time
+        self.billing_year = datetime.datetime.now().year
+        self.billing_month = 1 ##### change here to fetch month in a different way
+        self._holidays = holidays.IT(years=[self.billing_year, self.billing_year - 1])
+
+        self.billing_schema = None
+        self.total_content = None
+
+
+    """    PRIVATE METHODS    """
+    def __get_engine(self):
+        """get engine conditional based on extension of self.badges_path"""
+        if self.badges_path.rsplit(".")[-1] == "xlsx":
+            engine = "openpyxl"
+        elif self.badges_path.rsplit(".")[-1] == "xls":
+            engine = "xlrd"
+        else:
+            raise TypeError("self.badges_path is not an Excel!")
+        return engine
+
+    def __load_Excel_badges(self):
+        """Load excel data of badges file (must be .xls or .xlsx)"""
+        engine = self.__get_engine()
+        try:
+            if engine == "openpyxl":
+                xlsx_data = openpyxl.load_workbook(self.badges_path)
+                sheet_names = xlsx_data.sheetnames
+            elif engine == "xlrd":
+                xlsx_data = xlrd.open_workbook(self.badges_path, on_demand=True, logfile=open(os.devnull, 'w'))
+                sheet_names = xlsx_data.sheet_names()
+            else:
+                raise
+            return xlsx_data, sheet_names, engine
+        except Exception as e:
+            raise Exception(f"Cannot load_Excel_badges. Error: {e}")
+
+    def __manage_columns(self, df):
+        """ private method to fix original column names"""
+        fixed_columns = []
+        prev_fixed = False
+        for index, v in enumerate(df.columns.values):
+            if prev_fixed:
+                prev_fixed = False
+                continue
+            new_value = df.columns.values[index].split()
+            new_value = " ".join(new_value).strip()
+            if new_value.startswith("COD QTA"):
+                new_value = new_value.split()
+                if len(new_value[1]) > 3:
+                    new_value[0] = new_value[0] + new_value[1][3:]
+                fixed_columns.append(new_value[0])
+                fixed_columns.append(new_value[1])
+                prev_fixed = True
+            else:
+                fixed_columns.append(new_value)
+        df.columns = fixed_columns
+
+        to_remove = []
+        for index, col in enumerate(df.columns.values):
+            if col.startswith("Unnamed"):
+                # if col not in fixed_columns:
+                to_remove.append(index)
+        return df.drop(df.columns[to_remove], axis=1)
+
+    def __get_badge_name(self, sheet_obj):
+        """get owner's name out of sheet"""
+        engine = self.__get_engine()
+        try:
+            if engine == "openpyxl":
+                badge_name = (sheet_obj[self.name_cell]).value
+            elif engine == "xlrd":
+                badge_name = sheet_obj.cell_value(int(self.name_cell[1:]) - 1, int(openpyxl.utils.cell.column_index_from_string(self.name_cell[0])) - 1)
+            else:
+                raise
+            badge_name = " ".join(badge_name.split())
+            return badge_name
+        except Exception as e:
+            raise Exception(f"Cannot get_badge_name. Error: {e}")
+
+    def __minutes_to_int(self, decimal_time):
+        """ decimal_time => (str) MM"""
+        # if 0 not present attach it
+        if len(decimal_time) == 1:
+            decimal_time = decimal_time + "0"
+
+        hour_min = 60
+        result = (100 * int(decimal_time)) / hour_min
+        return str(int(result))
+
+    def __round_float(self, float_number, decimal_pos=2):
+        try:
+            float(float_number)
+        except:
+            raise TypeError("Cannot round: not a float number")
+        rounded = str(float_number).split(".")
+        rounded = float(rounded[0] + "." + rounded[1][:decimal_pos])
+        return rounded
+
+    def __smart_renamer(self, name):
+        old_name = name.split(" ")
+        new_name = ""
+
+        for index, word in enumerate(old_name):
+            if index < len(old_name):
+                new_name += (old_name[index][0].upper() + old_name[index][1:].lower() + " ")
+            else:
+                new_name += (old_name[index][0].upper() + old_name[index][1:].lower())
+
+        return new_name
+
+    """    PUBLIC METHODS    """
+    def parse_badges(self):
+        """
+        read and fix the badges form, adjusting column names and preparing data to be read by other methods.
+        returning a dict containing every worker as key and a subdict containing every of its workday as value
+        """
+        xlsx_data, sheet_names, engine = self.__load_Excel_badges()
+        total_content = {}
+        for sheetNo, sheet in enumerate(sheet_names):
+            # getting df, fixing columns, removing empty columns
+            df = pd.read_excel(xlsx_data, sheet_name=sheet, header=9, index_col=0, engine=engine)
+
+            # get badge name
+            sheet_data = xlsx_data[sheet] if engine == "openpyxl" else xlsx_data.get_sheet(sheetNo)
+            badge_name = self.__get_badge_name(sheet_data)
+            total_content[badge_name] = {}
+
+            # set columns
+            df = self.__manage_columns(df)
+
+            # parse rows
+            for row_ in df.iterrows():
+                i = str(row_[0]).strip()
+                row = dict(row_[1])
+
+                try:
+                    if re.search(self.regex_day_pattern, i):
+                        row_dict = {}
+
+                        # pairing values
+                        already_parsed = []
+                        for val in row:
+                            paired = False
+                            for key in self.pairing_schema:
+                                number = ""
+                                if val.split(".")[0] in self.pairing_schema[key]:
+                                    in_parsing = list(filter(lambda x: x != "", val.split(".")))
+                                    if len(in_parsing) > 1 and in_parsing[1]:
+                                        number = f".{in_parsing[1]}"
+
+                                    main_key = key + "." + number if number else key + number
+                                    if main_key not in already_parsed:
+                                        row_dict[main_key] = []
+                                        for v_ in self.pairing_schema[key]:
+
+                                            # find the correct refer_key
+                                            for _i in range(3):
+                                                refer_key = v_ + "."*_i + number
+                                                if refer_key in row.keys():
+                                                    break
+
+                                            if not isinstance(row[refer_key], pd.Series):
+                                                row_dict[main_key].append(str(row[refer_key]).strip())
+                                            else:
+                                                check_val = ""
+                                                for index in list(row[refer_key].to_list()):
+                                                    if not str(index).isspace():
+                                                        check_val = str(index).strip()
+                                                row_dict[main_key].append(check_val)
+
+                                        already_parsed.append(main_key)
+                                    paired = True
+
+                            if not paired:
+                                row_dict[val] = row[val]
+
+                        total_content[badge_name][i] = row_dict
+
+                except TypeError:
+                    pass
+
+        self.total_content = total_content
+        return total_content
+
+    def parse_day(self,day, day_content):
+        """ Pointing out what is the type of the hours worked by the worker that day """
+        parsed_day = {
+            "OR": 0.0,  # ordinarie
+            "ST": 0.0,  # straordinarie
+            "MN": 0.0,  # maggiorazione notturna
+            "OF": 0.0,  # ordinario festivo
+            "SF": 0.0,  # straordinario festivo
+            "SN": 0.0,  # straordinario notturno
+            "FN": 0.0  # festivo notturno
+        }
+
+        # se non ci sono ore ordinarie o straordinarie return empty day
+        if not any(day_content["GIOR PROG"]) and not any(day_content["GIOR PROG..1"]):
+            return parsed_day
+
+        # setting starting ordinary and overtime values
+        if day_content["GIOR PROG"][0]:
+            val = day_content["GIOR PROG"][0] if len(day_content["GIOR PROG"][0]) >= 4 else "0" + day_content["GIOR PROG"][0]
+            if "." in val:
+                val = val.split(".")[0] + "." + self.__minutes_to_int(val.split(".")[1])
+            parsed_day["OR"] += float(val)
+        if day_content["GIOR PROG..1"][0]:
+            val = day_content["GIOR PROG..1"][0] if len(day_content["GIOR PROG..1"][0]) >= 4 else "0" + day_content["GIOR PROG..1"][0]
+            if "." in val:
+                val = val.split(".")[0] + "." + self.__minutes_to_int(val.split(".")[1])
+            parsed_day["ST"] += float(val)
+
+        # check every COD key for special hours
+        for key in day_content:
+            if key.startswith("COD") and any(day_content[key]):
+
+                # night shifts
+                if day_content[key][0] == "MN":
+                    hours = day_content[key][1] if len(day_content[key][1]) >= 4 else "0" + day_content[key][1]
+                    if "." in hours:
+                        hours = hours.split(".")[0] + "." + self.__minutes_to_int(hours.split(".")[1])
+                    hours = float(hours)
+                    parsed_day["OR"] -= hours
+                    parsed_day["MN"] += hours
+
+                # overtime night shifts
+                elif day_content[key][0] == "SN":
+                    hours = day_content[key][1] if len(day_content[key][1]) >= 4 else "0" + day_content[key][1]
+                    if "." in hours:
+                        hours = hours.split(".")[0] + "." + self.__minutes_to_int(hours.split(".")[1])
+                    hours = float(hours)
+                    parsed_day["ST"] -= hours
+                    parsed_day["SN"] += hours
+
+        # if day is holiday decrement ordinary to increase holiday values
+        check_day = f"{self.billing_month}/{day[:-1]}/{self.billing_year}"
+        if check_day in self._holidays:
+            parsed_day["OF"] += parsed_day["OR"]
+            parsed_day["OR"] -= parsed_day["OR"]
+            parsed_day["SF"] += parsed_day["ST"]
+            parsed_day["ST"] -= parsed_day["ST"]
+            parsed_day["FN"] += parsed_day["MN"]
+            parsed_day["MN"] -= parsed_day["MN"]
+
+        return parsed_day
+
+    def apply_billing_profile(self, hours_to_bill, billing_profile):
+        """
+        steps: 1. adding time, 2. apply pattern, 3. apply pricing
+        """
+        priced_hours = {}
+
+        # check integrity and get tag to focus
+        if hours_to_bill["OR"] and hours_to_bill["OF"]:
+            raise ValueError("ERROR: there are both ordinary and holiday hours on a single day")
+        else:
+            if hours_to_bill["OF"]:
+                tag = "OF"
+            elif hours_to_bill["OR"]:
+                tag = "OR"
+            else:
+                tag = None
+
+        # adding time
+        if tag:
+            if billing_profile["time_to_add"] and hours_to_bill[tag]:
+                if billing_profile["add_over_threshold"]:
+                    if hours_to_bill[tag] >= billing_profile["threshold_hour"]:
+                        hours_to_bill[tag] += billing_profile["time_to_add"]
+                else:
+                    hours_to_bill[tag] += billing_profile["time_to_add"]
+
+            # apply pattern
+            if billing_profile["pattern"] and hours_to_bill[tag]:
+                new_amount = 0.0
+                start_val = copy.deepcopy(hours_to_bill[tag])
+                for i in range(len(billing_profile["pattern"])):
+                    operation = billing_profile["pattern"][i]["perform"].strip()
+                    amount = billing_profile["pattern"][i]["amount"]
+                    if operation == "/":
+                        start_val /= amount
+                    elif operation =="-":
+                        start_val -= amount
+                    elif operation == "+":
+                        start_val += amount
+                    elif operation =="*":
+                        start_val *= amount
+                    else:
+                        raise Exception("ERROR: invalid operator in pattern. operator must be one of + - * /")
+                    if billing_profile["pattern"][i]["keep"]:
+                        new_amount += start_val
+                hours_to_bill[tag] = new_amount
+
+        # apply pricing
+        if billing_profile["pricelist"]:
+            for hour_type in hours_to_bill:
+                for p in billing_profile["pricelist"]:
+                    if hour_type == p["tag"]:
+                        priced_hours[hour_type] = hours_to_bill[hour_type]*p["price"]
+                        priced_hours[hour_type] = self.__round_float(priced_hours[hour_type], decimal_pos=2)
+        else:
+            raise Exception("ERROR: No pricelist specified!")
+
+        return priced_hours
+
+    def create_billing_schema(self, total_content, random_=True):
+
+        billing_schema = {}
+
+        # assign random billing profile to workers
+        if random_:
+            for worker in total_content:
+                profile = random.choice(list(self.billing_profiles.keys()))
+                billing_schema[worker] = {k:profile for k in total_content[worker]}
+        else:
+            raise Exception("Not implemented yet")
+
+        self.billing_schema = billing_schema
+        return billing_schema
+
+    def parse_total(self, data):
+        """ return a tuple containing ({worker:total}, {total:total})  """
+        total = {}
+        new_data = {}
+
+        for worker in data:
+            new_data[worker] = {}
+            for day in data[worker]:
+                for hour_type in data[worker][day]:
+
+                    # add to worker data
+                    if hour_type in new_data[worker]:
+                        new_data[worker][hour_type] += data[worker][day][hour_type]
+                    else:
+                        new_data[worker][hour_type] = data[worker][day][hour_type]
+
+                    # add to total
+                    if hour_type in total:
+                        total[hour_type] += data[worker][day][hour_type]
+                    else:
+                        total[hour_type] = data[worker][day][hour_type]
+
+            # round values
+            for h in new_data[worker]:
+                new_data[worker][h] = self.__round_float(new_data[worker][h], decimal_pos=2)
+
+        # round values
+        for h in total:
+            total[h] = self.__round_float(total[h], decimal_pos=2)
+
+        return (new_data, total)
+
+    def bill(self, total_content, billing_schema, dump_values=False, dump_detailed=False):
+
+        hours_data = {}
+        billing_data = {}
+
+        for worker in total_content:
+            hours_data[worker] = {}
+            billing_data[worker] = {}
+            for day_ in total_content[worker]:
+
+                # parsing hours of the day
+                hours_to_bill = self.parse_day(day_, total_content[worker][day_])
+                hours_data[worker][day_] = hours_to_bill
+
+                # apply billing profile for the day
+                billing_profile = self.billing_profiles[billing_schema[worker][day_]]
+                billed_hours = self.apply_billing_profile(hours_to_bill, billing_profile)
+                billing_data[worker][day_] = billed_hours
+
+        new_billing_data, total_billing = self.parse_total(billing_data)
+        new_hours_data, total_hours = self.parse_total(hours_data)
+
+        # conditional dump values
+        if dump_detailed:
+            with open("DETAIL_ore_lavoratori.json", "w") as f:
+                f.write(json.dumps(hours_data, indent=4, ensure_ascii=True))
+            with open("DETAIL_valori_da_fatturare.json", "w") as f:
+                f.write(json.dumps(billing_data, indent=4, ensure_ascii=True))
+
+        if dump_values:
+            with open("ore_lavoratori.json", "w") as f:
+                f.write(json.dumps(new_hours_data, indent=4, ensure_ascii=True))
+            with open("valori_da_fatturare.json", "w") as f:
+                f.write(json.dumps(new_billing_data, indent=4, ensure_ascii=True))
+
+        self.create_Excel(new_hours_data, total_billing, billing_schema)
+
+    def create_Excel(self, content, total_billing, billing_schema, transposed=True):
+        df = pd.DataFrame.from_dict(content)
+
+        if transposed:
+            df = df.T
+
+        # sort alphabetically rows and columns
+        df = df.sort_index()
+        df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
+
+        # add totals (rows total/column total)
+        df.loc[">> ORE TOTALI <<"] = df.sum(axis=0)
+        df.loc[">> € DA FATTURARE <<"] = total_billing
+        df['TOTALI'] = df.sum(axis=1)
+
+        # polish
+        df.index.rename("LAVORATORI", inplace=True)
+        df.replace(0, np.nan, inplace=True)
+
+        #generating excel with df data
+        with pd.ExcelWriter(self.bill_name, mode="w") as writer:
+            sh_name = "Report Fatturazione"
+            df.to_excel(writer, sheet_name=sh_name, na_rep="", float_format="%.2f")
+            ws = writer.sheets[sh_name]
+            footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
+
+            # style total hours
+            for cell in ws[f"{len(df)}:{len(df)}"]:
+                cell.font = openpyxl.styles.Font(bold=True)
+                cell.fill = footer_color
+
+            # style billing totals
+            for cell in ws[f"{len(df)+1}:{len(df)+1}"]:
+                cell.number_format = '#,##0.00€'
+                cell.font = openpyxl.styles.Font(bold=True)
+                cell.fill = footer_color
+
+
+
