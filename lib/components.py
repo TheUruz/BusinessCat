@@ -47,8 +47,7 @@ class Custom_Toplevel(Toplevel):
 
     def apply_balloon_to_widget(self, widget, text):
         """ use this method to apply a balloon to a given widget"""
-        self.widget_balloon = Balloon(master=widget, text=text, timeout=1, height=100)
-
+        self.widget_balloon = Balloon(master=widget, text=text, timeout=0.5, height=100)
 
     def _close(self, master):
         """ defining closing window behavior """
@@ -1366,6 +1365,175 @@ class Verificator_Window(Custom_Toplevel):
             raise
 
 
+# BILLING WINDOWS
+class Billing_Landing_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 500
+        self.height = 240
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Billing Manager")
+        self.margin = 15
+
+
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
+        self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
+
+        #define welcome message and first instruction
+        self.welcome_lbl = Label(self, text="""Benvenuto nel Billing Manager di BusinessCat!""", font=("Calibri", 16, "bold"), bg=appLib.default_background, fg=appLib.color_orange)
+        self.welcome_lbl.pack(anchor="center", pady=self.margin)
+
+        # define buttons frame
+        self.BUTTONS_FRAME = Frame(self, bg=appLib.default_background)
+        self.BUTTONS_FRAME.pack(anchor="center", padx=self.margin, fill="both", expand=True)
+        self.jobs_button = Button(self.BUTTONS_FRAME, width=15, text="Jobs", font=("Calibri", 10, "bold"))
+        self.jobs_button.grid(column=0, row=0, pady=5, padx=5)
+        self.apply_balloon_to_widget(self.jobs_button, "Visualizza e edita le possibili mansioni nelle fatture")
+        self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Billing Profiles", font=("Calibri", 10, "bold"))
+        self.billing_profiles_button.grid(column=2, row=0, pady=5, padx=5)
+        self.apply_balloon_to_widget(self.billing_profiles_button, "Visualizza e edita i possiibli profili di fatturazione")
+
+        self.start_billing_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"))
+        self.start_billing_btn.grid(column=1, row=2, pady=self.margin, padx=5)
+
+        #resize grid
+        size = self.BUTTONS_FRAME.grid_size()
+        for col in range(size[0]):
+            self.BUTTONS_FRAME.grid_columnconfigure(col, weight=1)
+        for row in range(size[1]):
+            self.BUTTONS_FRAME.grid_rowconfigure(row, minsize=self.margin, weight=1)
+
+
+class Edit_Jobs_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 500
+        self.height = 550
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Edit Jobs")
+        self.margin = 15
+
+        self.__jobs_path = "../config_files/BusinessCat billing/jobs.json"
+        self.__load_jobs()
+        self.displayed_job = IntVar()
+        self.displayed_job.set(0)
+
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
+        self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
+
+        ####### define main frame structure
+        self.MASTER_FRAME = Frame(self, bg=appLib.default_background)
+        self.MASTER_FRAME.pack(anchor="center", pady=(self.margin,0))
+        self.ADD_FRAME = Frame(self.MASTER_FRAME, bg=appLib.color_green)
+        self.ADD_FRAME.grid(row=0, column=0, sticky="w")
+        self.RMV_FRAME = Frame(self.MASTER_FRAME, bg=appLib.color_green)
+        self.RMV_FRAME.grid(row=0, column=3, sticky="e")
+
+        self.DATA_FRAME = Frame(self.MASTER_FRAME,width=400, height=320, bg=appLib.color_yellow)
+        self.DATA_FRAME.grid(row=1, columnspan=4, sticky="nsew")
+        self.DATA_FRAME.pack_propagate(0)
+
+        self.CANVAS = Canvas(self.DATA_FRAME)
+        self.CANVAS.pack(side="left", fill="both", expand=True)
+        self.CANVAS.config(bg=appLib.color_green)
+
+        self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
+        self.JSON_CONTAINER.pack(fill="both", expand=True)
+
+        # define add/rmv buttons
+        self.add_lbl = Label(self.ADD_FRAME, width=4, height=2, text="+", bg=appLib.color_grey)
+        self.add_lbl.pack(fill="both")
+        self.rmv_lbl = Label(self.RMV_FRAME, width=4, height=2, text="x", bg=appLib.color_grey)
+        self.rmv_lbl.pack(fill="both")
+
+        #fetch display json data
+        self.display_data()
+
+        # define displayed data scrollbar
+        self.YSCROLL = Scrollbar(self.DATA_FRAME, orient="vertical", command=self.CANVAS.yview)
+        self.YSCROLL.pack(side="right", fill="y", expand=False)
+        self.CANVAS.configure(yscrollcommand=self.YSCROLL.set)
+
+        # define navbar
+        navbar_background = appLib.default_background
+        navbar_padx = 40
+        self.NAV_FRAME = Frame(self, bg=navbar_background)
+        self.NAV_FRAME.pack(anchor="center", pady=5)
+
+        # define previous button
+        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1)
+        self.previous_button.grid(row=0, column=0, padx=(0,navbar_padx), sticky="w")
+
+        # define info label
+        self.info_label = Label(self.NAV_FRAME, text=f"Job N.{self.displayed_job.get()}", font=("Calibri", 12, "bold"), bg=navbar_background)
+        self.info_label.grid(row=0, column=1, padx=navbar_padx, sticky="nsew")
+
+        # define next button
+        self.previous_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1)
+        self.previous_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
+
+        #resize grid
+        self.update()
+        size = self.NAV_FRAME.grid_size()
+        for col in range(size[0]):
+            self.NAV_FRAME.grid_columnconfigure(col, minsize=self.NAV_FRAME.winfo_width()/3, weight=1)
+
+    def __load_jobs(self):
+        with open(self.__jobs_path, "r") as f:
+            self.jobs = json.load(f)
+
+    def display_data(self):
+        self.update()
+        self.JSON_CONTAINER.grid_forget()
+
+        padx = 5
+        label_size = 60
+        txt_box_size = self.JSON_CONTAINER.winfo_width() - label_size - padx * 4 - 40
+        fields_to_disable = ["id", "billing_profile_id"]
+
+        # iterate throught jobs and create new grid
+        i = 0
+        for k,v in self.jobs[self.displayed_job.get()].items():
+
+            key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
+            key.grid(row=i, column=0, pady=(2,1), padx=padx, sticky="nsew")
+
+            value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
+            value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
+            value.insert(0, v)
+
+            # conditionally disable fields
+            if k in fields_to_disable:
+                value.config(state=DISABLED)
+
+            i+=1
+
+        self.JSON_CONTAINER.grid_columnconfigure(0, minsize=label_size, weight=1)
+        self.JSON_CONTAINER.grid_columnconfigure(1, minsize=txt_box_size, weight=3)
+
+        self.CANVAS.create_window((0,0), window=self.JSON_CONTAINER, anchor="nw")
+        self.CANVAS.bind("<Configure>", lambda e: self.CANVAS.configure(scrollregion=self.CANVAS.bbox("all")))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
     root = Tk()
     root.withdraw()
@@ -1374,5 +1542,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Home_Window(root)
+    app = Edit_Jobs_Window(root)
     app.mainloop()

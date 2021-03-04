@@ -912,39 +912,67 @@ class PaycheckController():
         return problems
 
 class BillingManager():
-    def __init__(self, badges_path):
+    def __init__(self):
         self.bill_name = "Fattura di prova.xlsx"
-        self.badges_path = badges_path
+        self.badges_path = None#badges_path
         self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
-        self.name_cell = "B5"
+        self.name_cell = "B5" # in che cella del badge_path si trova il nome
         self.pairing_schema = {
             "COD QTA": ["COD", "QTA"],
             "ENT USC": ["ENT", "USC"],
             "GIOR PROG": ["GIOR", "PROG"]
         }
+        self.billing_schema = None
+        self.total_content = None
 
-        with open("../config_files/billing_profiles.json","r") as f:
-            self.billing_profiles = json.load(f)
+        # config paths
+        #self.__bills_path = "../config_files/BusinessCat billing/bills.json"
+        self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
+        self.__jobs_path = "../config_files/BusinessCat billing/jobs.json"
+
+        # load data from config paths
+        #self.__load_bills()
+        self.__load_billing_profiles()
+        self.__load_jobs()
 
         # set billing time
         self.billing_year = datetime.datetime.now().year
         self.billing_month = 1 ##### change here to fetch month in a different way
         self._holidays = holidays.IT(years=[self.billing_year, self.billing_year - 1])
 
-        self.billing_schema = None
-        self.total_content = None
+        print(">> BillingManager Ready")
 
 
     """    PRIVATE METHODS    """
     def __get_engine(self):
         """get engine conditional based on extension of self.badges_path"""
-        if self.badges_path.rsplit(".")[-1] == "xlsx":
+        if not self.badges_path:
+            raise Exception("badges_path missing!")
+        elif self.badges_path.rsplit(".")[-1] == "xlsx":
             engine = "openpyxl"
         elif self.badges_path.rsplit(".")[-1] == "xls":
             engine = "xlrd"
         else:
             raise TypeError("self.badges_path is not an Excel!")
         return engine
+
+    def __load_bills(self):
+        """ read and load current billing_profiles file """
+        with open(self.__bills_path,"r") as f:
+            self.bills = json.load(f)
+        print("** bills caricati")
+
+    def __load_billing_profiles(self):
+        """ read and load current billing_profiles file """
+        with open(self.__billing_profiles_path,"r") as f:
+            self.billing_profiles = json.load(f)
+        print("** billing_profiles caricati")
+
+    def __load_jobs(self):
+        """ read and load current billing_profiles file """
+        with open(self.__jobs_path,"r") as f:
+            self.jobs = json.load(f)
+        print("** jobs caricati")
 
     def __load_Excel_badges(self):
         """Load excel data of badges file (must be .xls or .xlsx)"""
@@ -1036,7 +1064,13 @@ class BillingManager():
 
         return new_name
 
+
     """    PUBLIC METHODS    """
+    def set_badges_path(self, badges_path):
+        if not os.path.exists(badges_path):
+            raise ValueError("ERROR: Cannot find badges path")
+        self.badges_path = badges_path
+
     def parse_badges(self):
         """
         read and fix the badges form, adjusting column names and preparing data to be read by other methods.
@@ -1314,6 +1348,7 @@ class BillingManager():
                 f.write(json.dumps(new_billing_data, indent=4, ensure_ascii=True))
 
         self.create_Excel(new_hours_data, total_billing, billing_schema)
+        print(">> BillingManager Done")
 
     def create_Excel(self, content, total_billing, billing_schema, transposed=True):
         df = pd.DataFrame.from_dict(content)
@@ -1352,5 +1387,15 @@ class BillingManager():
                 cell.font = openpyxl.styles.Font(bold=True)
                 cell.fill = footer_color
 
+        print(f">> {self.bill_name} REDATTO CON SUCCESSO")
 
+"""
+path = "../test_data/cartellini.xlsx"
+Fatturatore = BillingManager()
 
+Fatturatore.set_badges_path(path)
+all_badges = Fatturatore.parse_badges()
+billing_schema = Fatturatore.create_billing_schema(all_badges, random_=True)
+
+Fatturatore.bill(all_badges, billing_schema)
+"""
