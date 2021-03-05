@@ -1405,21 +1405,27 @@ class Billing_Landing_Window(Custom_Toplevel):
         for row in range(size[1]):
             self.BUTTONS_FRAME.grid_rowconfigure(row, minsize=self.margin, weight=1)
 
-
 class Edit_Jobs_Window(Custom_Toplevel):
     def __init__(self, master=None):
         self.width = 500
-        self.height = 550
+        self.height = 490
         super().__init__(master, self.width, self.height)
 
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Edit Jobs")
         self.margin = 15
-
         self.__jobs_path = "../config_files/BusinessCat billing/jobs.json"
         self.__load_jobs()
         self.displayed_job = IntVar()
         self.displayed_job.set(0)
+        self.untouchable_keys = ["id", "billing_profile_id"]
+        self.default_new_job = {
+            "id":"",
+            "name":"",
+            "billing_profile_id":""
+        }
+
+
 
         # define back button
         self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
@@ -1428,95 +1434,203 @@ class Edit_Jobs_Window(Custom_Toplevel):
         ####### define main frame structure
         self.MASTER_FRAME = Frame(self, bg=appLib.default_background)
         self.MASTER_FRAME.pack(anchor="center", pady=(self.margin,0))
-        self.ADD_FRAME = Frame(self.MASTER_FRAME, bg=appLib.color_green)
-        self.ADD_FRAME.grid(row=0, column=0, sticky="w")
-        self.RMV_FRAME = Frame(self.MASTER_FRAME, bg=appLib.color_green)
-        self.RMV_FRAME.grid(row=0, column=3, sticky="e")
 
-        self.DATA_FRAME = Frame(self.MASTER_FRAME,width=400, height=320, bg=appLib.color_yellow)
+        self.ADD_RMV_FRAME = Frame(self.MASTER_FRAME, bg=appLib.default_background)
+        self.ADD_RMV_FRAME.grid(sticky="nsew", columnspan=4)
+
+        self.DATA_FRAME = Frame(self.MASTER_FRAME,width=420, height=320, bg=appLib.default_background)
         self.DATA_FRAME.grid(row=1, columnspan=4, sticky="nsew")
         self.DATA_FRAME.pack_propagate(0)
-
         self.CANVAS = Canvas(self.DATA_FRAME)
         self.CANVAS.pack(side="left", fill="both", expand=True)
-        self.CANVAS.config(bg=appLib.color_green)
-
-        self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
-        self.JSON_CONTAINER.pack(fill="both", expand=True)
+        self.CANVAS.config(bg=appLib.color_light_orange)
 
         # define add/rmv buttons
-        self.add_lbl = Label(self.ADD_FRAME, width=4, height=2, text="+", bg=appLib.color_grey)
-        self.add_lbl.pack(fill="both")
-        self.rmv_lbl = Label(self.RMV_FRAME, width=4, height=2, text="x", bg=appLib.color_grey)
-        self.rmv_lbl.pack(fill="both")
-
-        #fetch display json data
-        self.display_data()
-
-        # define displayed data scrollbar
-        self.YSCROLL = Scrollbar(self.DATA_FRAME, orient="vertical", command=self.CANVAS.yview)
-        self.YSCROLL.pack(side="right", fill="y", expand=False)
-        self.CANVAS.configure(yscrollcommand=self.YSCROLL.set)
+        self.add_lbl = Label(self.ADD_RMV_FRAME, text="+", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_green)
+        self.add_lbl.bind("<Button-1>", lambda e: self.add_job())
+        self.apply_balloon_to_widget(self.add_lbl, "Aggiungi un nuovo Job")
+        self.add_lbl.pack(side="right", padx=5)
+        self.rmv_lbl = Label(self.ADD_RMV_FRAME, text="-", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_red)
+        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_job())
+        self.apply_balloon_to_widget(self.rmv_lbl, "Rimuovi il Job corrente")
+        self.rmv_lbl.pack(side="right", padx=5)
 
         # define navbar
         navbar_background = appLib.default_background
         navbar_padx = 40
-        self.NAV_FRAME = Frame(self, bg=navbar_background)
-        self.NAV_FRAME.pack(anchor="center", pady=5)
+        self.NAV_FRAME = Frame(self, width=420, height=50, bg=navbar_background)
+        self.NAV_FRAME.pack(anchor="center", pady=(5,0))
+        self.NAV_FRAME.grid_propagate(0)
 
         # define previous button
-        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1)
+        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_job)
         self.previous_button.grid(row=0, column=0, padx=(0,navbar_padx), sticky="w")
 
         # define info label
-        self.info_label = Label(self.NAV_FRAME, text=f"Job N.{self.displayed_job.get()}", font=("Calibri", 12, "bold"), bg=navbar_background)
+        self.info_label = Label(self.NAV_FRAME, font=("Calibri", 12, "bold"), bg=navbar_background)
         self.info_label.grid(row=0, column=1, padx=navbar_padx, sticky="nsew")
 
         # define next button
-        self.previous_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1)
-        self.previous_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
+        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_job)
+        self.next_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
 
         #resize grid
-        self.update()
         size = self.NAV_FRAME.grid_size()
         for col in range(size[0]):
             self.NAV_FRAME.grid_columnconfigure(col, minsize=self.NAV_FRAME.winfo_width()/3, weight=1)
 
+        #fetch and display json data
+        self.display_data()
+
+
+    """ PRIVATE METHODS """
     def __load_jobs(self):
         with open(self.__jobs_path, "r") as f:
             self.jobs = json.load(f)
 
+    def __parse_data(self):
+        keys = []
+        values = []
+        for child in self.JSON_CONTAINER.winfo_children():
+            if isinstance(child, Label):
+                keys.append(child.cget("text"))
+            elif isinstance(child, Entry):
+                values.append(child.get().strip())
+        new_job = dict(zip(keys,values))
+        return new_job
+
+    def __save_data(self, new_data=None):
+        """ save current displayed job """
+        if new_data and new_data != self.jobs[self.displayed_job.get()]:
+            save = messagebox.askyesno("Salvare?", "I dati di questa mansione sono stati modificati\nsi desidera salvare i cambiamenti?")
+            if save:
+                self.jobs[self.displayed_job.get()] = new_data
+
+        with open(self.__jobs_path, "w") as f:
+            f.write(json.dumps(self.jobs, indent=4))
+
+    def __get_new_job_id(self):
+        id_lenght = 4
+
+        check_high = 0
+        for job in self.jobs:
+            if int(job["id"]) > check_high:
+                check_high = int(job["id"])
+        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
+
+        new_id = "0"*(id_lenght-len(check_high)) + check_high
+        return new_id
+
+
+    """ PUBLIC METHODS """
+    def next_job(self):
+
+        self.__save_data(self.__parse_data())
+
+        max_lenght = len(self.jobs) -1 if len(self.jobs) > 0 else 0
+        if self.displayed_job.get() < max_lenght:
+            self.displayed_job.set(self.displayed_job.get() + 1)
+        else:
+            self.displayed_job.set(0)
+
+        self.display_data()
+
+    def previous_job(self):
+
+        self.__save_data(self.__parse_data())
+
+        max_lenght = len(self.jobs) -1 if len(self.jobs) > 0 else 0
+        if self.displayed_job.get() > 0:
+            self.displayed_job.set(self.displayed_job.get() - 1)
+        else:
+            self.displayed_job.set(max_lenght)
+
+        self.display_data()
+
     def display_data(self):
-        self.update()
-        self.JSON_CONTAINER.grid_forget()
+
+        # clear previous view
+        try:
+            self.JSON_CONTAINER.destroy()
+        except:
+            pass
 
         padx = 5
         label_size = 60
-        txt_box_size = self.JSON_CONTAINER.winfo_width() - label_size - padx * 4 - 40
-        fields_to_disable = ["id", "billing_profile_id"]
+        txt_box_size = 300
+        job_name = ""
 
-        # iterate throught jobs and create new grid
-        i = 0
-        for k,v in self.jobs[self.displayed_job.get()].items():
-
-            key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
-            key.grid(row=i, column=0, pady=(2,1), padx=padx, sticky="nsew")
-
-            value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
-            value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
-            value.insert(0, v)
-
-            # conditionally disable fields
-            if k in fields_to_disable:
-                value.config(state=DISABLED)
-
-            i+=1
-
+        # set new container
+        self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
+        self.JSON_CONTAINER.pack(fill="both", expand=True)
         self.JSON_CONTAINER.grid_columnconfigure(0, minsize=label_size, weight=1)
         self.JSON_CONTAINER.grid_columnconfigure(1, minsize=txt_box_size, weight=3)
 
-        self.CANVAS.create_window((0,0), window=self.JSON_CONTAINER, anchor="nw")
-        self.CANVAS.bind("<Configure>", lambda e: self.CANVAS.configure(scrollregion=self.CANVAS.bbox("all")))
+        # senza lavori da mostrare
+        if not self.jobs:
+            no_jobs_lbl = Label(self.JSON_CONTAINER, text="NON CI SONO JOBS DA MOSTRARE", font=("Calibri", 12), bg=appLib.color_light_orange)
+            no_jobs_lbl.pack(anchor="center", ipady=100)
+
+        # iterate throught jobs and create new grid in the new container
+        try:
+            i = 0
+            for k,v in self.jobs[self.displayed_job.get()].items():
+
+                if k == "name":
+                    job_name = v
+
+                key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
+                key.grid(row=i, column=0, pady=(2,1), padx=padx, sticky="nsew")
+
+                value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
+                value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
+                value.insert(0, v)
+
+                # conditionally disable fields
+                if k in self.untouchable_keys:
+                    value.config(state=DISABLED)
+
+                i+=1
+
+            # define displayed data scrollbar
+            try:
+                self.YSCROLL.destroy()
+            except:
+                pass
+            self.YSCROLL = Scrollbar(self.DATA_FRAME, orient="vertical", command=self.CANVAS.yview)
+            self.YSCROLL.pack(side="right", fill="y", expand=False)
+            self.CANVAS.configure(yscrollcommand=self.YSCROLL.set)
+
+            self.CANVAS.create_window((0,0), window=self.JSON_CONTAINER, anchor="nw")
+            self.CANVAS.bind("<Configure>", lambda e: self.CANVAS.configure(scrollregion=self.CANVAS.bbox("all")))
+
+        except:
+            pass
+
+        # change label
+        self.info_label.config(text=f"{job_name}")
+
+    def add_job(self):
+        create_new = messagebox.askyesno("", "Vuoi creare un nuovo Job?")
+        if create_new:
+            new_job = copy.deepcopy(self.default_new_job)
+            new_job["id"] = self.__get_new_job_id()
+            self.jobs.append(new_job)
+            go_to_last = messagebox.askyesno("", "Il nuovo Job è stato inizializzato, vuoi visualizzarlo?")
+            self.__save_data(self.__parse_data())  # save current job
+
+            if go_to_last:
+                self.displayed_job.set(len(self.jobs)-1) # set destination job to the new one
+                self.display_data() # display destination job
+
+    def remove_job(self):
+        confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo Job?")
+        if confirm_delete:
+            self.jobs.pop(self.displayed_job.get())
+            self.displayed_job.set(self.displayed_job.get() - 1)  # set destination job to the previous one
+            self.__save_data()  # save current job
+            self.display_data() # display destination job
+
 
 
 
