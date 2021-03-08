@@ -316,6 +316,10 @@ class Home_Window(Custom_Toplevel):
         self.button3 = Button(self.menu_frame, text="Verify Paychecks", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Verificator_Window))
         self.button3.pack(anchor="center", pady=self.buttons_y_padding)
 
+        # Billing Manager button
+        self.button4 = Button(self.menu_frame, text="Billing Manager", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Billing_Landing_Window))
+        self.button4.pack(anchor="center", pady=self.buttons_y_padding)
+
         # "Back to login" Label (packed only if app is using db)
         if master.using_db:
             self.back_label = Label(self.menu_frame, text="<< Torna al Login", font=("Calibri", 11, "bold"), fg=appLib.color_orange, bg=self.menu_background_color)
@@ -1388,10 +1392,10 @@ class Billing_Landing_Window(Custom_Toplevel):
         # define buttons frame
         self.BUTTONS_FRAME = Frame(self, bg=appLib.default_background)
         self.BUTTONS_FRAME.pack(anchor="center", padx=self.margin, fill="both", expand=True)
-        self.jobs_button = Button(self.BUTTONS_FRAME, width=15, text="Jobs", font=("Calibri", 10, "bold"))
+        self.jobs_button = Button(self.BUTTONS_FRAME, width=15, text="Jobs", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Jobs_Window))
         self.jobs_button.grid(column=0, row=0, pady=5, padx=5)
         self.apply_balloon_to_widget(self.jobs_button, "Visualizza e edita le possibili mansioni nelle fatture")
-        self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Billing Profiles", font=("Calibri", 10, "bold"))
+        self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Billing Profiles", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_BillingProfiles_Window))
         self.billing_profiles_button.grid(column=2, row=0, pady=5, padx=5)
         self.apply_balloon_to_widget(self.billing_profiles_button, "Visualizza e edita i possiibli profili di fatturazione")
 
@@ -1428,7 +1432,7 @@ class Edit_Jobs_Window(Custom_Toplevel):
 
 
         # define back button
-        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
         self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
 
         ####### define main frame structure
@@ -1631,12 +1635,316 @@ class Edit_Jobs_Window(Custom_Toplevel):
             self.__save_data()  # save current job
             self.display_data() # display destination job
 
+class Edit_BillingProfiles_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 500
+        self.height = 490
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Edit Billing Profiles")
+        self.margin = 15
+        self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
+        self.__load_billing_profiles()
+        self.displayed_profile = IntVar()
+        self.displayed_profile.set(0)
+        self.untouchable_keys = ["id"]
+        self.float_fields = ["threshold_hours", "time_to_add", "price"]
+        self.default_profile = {
+            "threshold_hours": 0.0,
+            "add_over_threshold": True,
+            "time_to_add": 0.0,
+            "pattern": [],
+            "pricelist": [
+                {
+                    "tag": "OR",
+                    "name": "ore_ordinarie",
+                    "price": 0.0
+                },
+                {
+                    "tag": "ST",
+                    "name": "ore_straordinarie",
+                    "price": 0.0
+                },
+                {
+                    "tag": "MN",
+                    "name": "ore_notturne",
+                    "price": 0.0
+                },
+                {
+                    "tag": "OF",
+                    "name": "ore_festive",
+                    "price": 0.0
+                },
+                {
+                    "tag": "SF",
+                    "name": "ore_straordinarie_festive",
+                    "price": 0.0
+                },
+                {
+                    "tag": "SN",
+                    "name": "ore_straordinarie_notturne",
+                    "price": 0.0
+                },
+                {
+                    "tag": "FN",
+                    "name": "ore_festive_notturne",
+                    "price": 0.0
+                }
+            ],
+            "id": "",
+            "name":""
+        }
+        self.default_pattern_object = {
+            "perform": "/",
+            "amount": 2,
+            "keep": True
+        }
+
+
+
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
+
+        ####### define main frame structure
+        self.MASTER_FRAME = Frame(self, bg=appLib.default_background)
+        self.MASTER_FRAME.pack(anchor="center", pady=(self.margin,0))
+
+        self.ADD_RMV_FRAME = Frame(self.MASTER_FRAME, bg=appLib.default_background)
+        self.ADD_RMV_FRAME.grid(sticky="nsew", columnspan=4)
+
+        self.DATA_FRAME = Frame(self.MASTER_FRAME,width=420, height=320, bg=appLib.default_background)
+        self.DATA_FRAME.grid(row=1, columnspan=4, sticky="nsew")
+        self.DATA_FRAME.pack_propagate(0)
+        self.CANVAS = Canvas(self.DATA_FRAME)
+        self.CANVAS.pack(side="left", fill="both", expand=True)
+        self.CANVAS.config(bg=appLib.color_light_orange)
+
+        # define add/rmv buttons
+        self.add_lbl = Label(self.ADD_RMV_FRAME, text="+", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_green)
+        self.add_lbl.bind("<Button-1>", lambda e: self.add_profile())
+        self.apply_balloon_to_widget(self.add_lbl, "Aggiungi un nuovo Job")
+        self.add_lbl.pack(side="right", padx=5)
+        self.rmv_lbl = Label(self.ADD_RMV_FRAME, text="-", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_red)
+        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_profile())
+        self.apply_balloon_to_widget(self.rmv_lbl, "Rimuovi il Job corrente")
+        self.rmv_lbl.pack(side="right", padx=5)
+
+        # define navbar
+        navbar_background = appLib.default_background
+        navbar_padx = 40
+        self.NAV_FRAME = Frame(self, width=420, height=50, bg=navbar_background)
+        self.NAV_FRAME.pack(anchor="center", pady=(5,0))
+        self.NAV_FRAME.grid_propagate(0)
+
+        # define previous button
+        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_profile)
+        self.previous_button.grid(row=0, column=0, padx=(0,navbar_padx), sticky="w")
+
+        # define info label
+        self.info_label = Label(self.NAV_FRAME, font=("Calibri", 12, "bold"), bg=navbar_background)
+        self.info_label.grid(row=0, column=1, padx=navbar_padx, sticky="nsew")
+
+        # define next button
+        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_profile)
+        self.next_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
+
+        #resize grid
+        size = self.NAV_FRAME.grid_size()
+        for col in range(size[0]):
+            self.NAV_FRAME.grid_columnconfigure(col, minsize=self.NAV_FRAME.winfo_width()/3, weight=1)
+
+        #fetch and display json data
+        self.display_data()
+
+
+    """ PRIVATE METHODS """
+    def __load_billing_profiles(self):
+        with open(self.__billing_profiles_path, "r") as f:
+            self.billing_profiles = json.load(f)
+
+    def __parse_data(self):
+        keys = []
+        values = []
+        for child in self.JSON_CONTAINER.winfo_children():
+            if isinstance(child, Label):
+                keys.append(child.cget("text"))
+            elif isinstance(child, Entry):
+                values.append(child.get().strip())
+        new_job = dict(zip(keys,values))
+        return new_job
+
+    def __save_data(self, new_data=None):
+        """ save current displayed job """
+        if new_data and new_data != self.billing_profiles[self.displayed_profile.get()]:
+            save = messagebox.askyesno("Salvare?", "I dati di questo profilo sono stati modificati\nsi desidera salvare i cambiamenti?")
+            if save:
+                self.billing_profiles[self.displayed_profile.get()] = new_data
+
+        with open(self.__billing_profiles_path, "w") as f:
+            f.write(json.dumps(self.billing_profiles, indent=4))
+
+    def __get_new_job_id(self):
+        id_lenght = 4
+
+        check_high = 0
+        for job in self.jobs:
+            if int(job["id"]) > check_high:
+                check_high = int(job["id"])
+        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
+
+        new_id = "0"*(id_lenght-len(check_high)) + check_high
+        return new_id
+
+
+    """ PUBLIC METHODS """
+    def next_profile(self):
+
+        self.__save_data(self.__parse_data())
+
+        max_lenght = len(self.billing_profiles) -1 if len(self.billing_profiles) > 0 else 0
+        if self.displayed_profile.get() < max_lenght:
+            self.displayed_profile.set(self.displayed_profile.get() + 1)
+        else:
+            self.displayed_profile.set(0)
+
+        self.display_data()
+
+    def previous_profile(self):
+
+        self.__save_data(self.__parse_data())
+
+        max_lenght = len(self.billing_profiles) -1 if len(self.billing_profiles) > 0 else 0
+        if self.displayed_profile.get() > 0:
+            self.displayed_profile.set(self.displayed_profile.get() - 1)
+        else:
+            self.displayed_profile.set(max_lenght)
+
+        self.display_data()
+
+    def display_data(self):
+
+        # clear previous view
+        try:
+            self.JSON_CONTAINER.destroy()
+        except:
+            pass
+
+        padx = 5
+        default_pady = 5
+        label_size = 60
+        txt_box_size = 40
+        profile_name = ""
+
+        # set new container
+        self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
+        self.JSON_CONTAINER.pack(fill="both", expand=True)
+        self.JSON_CONTAINER.grid_columnconfigure(0, minsize=label_size, weight=1)
+        self.JSON_CONTAINER.grid_columnconfigure(1, minsize=txt_box_size, weight=3)
+
+        # senza lavori da mostrare
+        if not self.billing_profiles:
+            no_jobs_lbl = Label(self.JSON_CONTAINER, text="NON CI SONO PROFILI DA MOSTRARE", font=("Calibri", 12), bg=appLib.color_light_orange)
+            no_jobs_lbl.pack(anchor="center", ipady=100)
+
+        # iterate throught jobs and create new grid in the new container
+        try:
+            i = 0
+            for k,v in self.billing_profiles[self.displayed_profile.get()].items():
+
+                if k == "name":
+                    profile_name = v
+
+                key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
+                key.grid(row=i, column=0, pady=default_pady, padx=padx, sticky="nsew")
+
+                # not array values are packed as label(key) entry(value)
+                if not isinstance(v, list):
+                    value = Entry(self.JSON_CONTAINER, width=txt_box_size, bg=appLib.default_background)
+                    value.grid(row=i, column=1, pady=default_pady, padx=padx, sticky="nsw")
+                    value.insert(0, v)
+
+                    # conditionally disable fields
+                    if k in self.untouchable_keys:
+                        value.config(state=DISABLED)
+
+                    i += 1
+
+                # array values are packed as label(key) scrollable frame(value)
+                else:
+                    key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
+                    key.grid(row=i, column=0, pady=default_pady, padx=padx, sticky="nsew")
+                    i1 = 1
+
+                    if k == "pattern":
+                        self.PATTERN_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=250, height=120, bg=appLib.color_red)
+                        self.PATTERN_FRAME_MASTER.grid(row=i, column=1, padx=padx, sticky="nsw")
+                        if not v:
+                            self.PATTERN_FRAME_MASTER.grid(sticky="w")
+                        self.PATTERN_FRAME_MASTER.pack_propagate(0)
+
+                        self.PATTERN_CANVAS = Canvas(self.PATTERN_FRAME_MASTER)
+                        self.PATTERN_CANVAS.pack(side="left", fill="both", expand=True)
+                        self.PATTERN_CANVAS.config(bg=appLib.color_orange)
+                        self.PATTERN_CANVAS.bind("<Configure>", lambda e: self.PATTERN_CANVAS.configure(scrollregion=self.PATTERN_CANVAS.bbox("all")))
+
+                        self.PATTERN_FRAME = Frame(self.PATTERN_FRAME_MASTER, bg=appLib.color_orange)
+
+                        self.ADD_PATTERN_BTN = Label(self.PATTERN_FRAME, text="+", width=15, bg=appLib.color_grey, fg=appLib.color_green)
+                        self.ADD_PATTERN_BTN.pack(anchor="w")
+
+                        for index, value in enumerate(v):
+                            subframe = Frame(self.PATTERN_FRAME, bg=appLib.default_background)
+                            subframe.pack(anchor="w", pady=default_pady, padx=padx)
+                            rmv_lbl = Label(subframe, text="-", width=2, bg=appLib.color_grey, fg=appLib.color_red)
+                            rmv_lbl.grid(row=0, column=2, pady=default_pady, padx=padx, sticky="w")
+
+                            i2 = 0
+                            for k1, v1 in value.items():
+                                Label(subframe, text=k1, bg=appLib.default_background).grid(row=i2, column=0, pady=default_pady, padx=padx, sticky="w")
+                                value = Entry(subframe, bg=appLib.default_background)
+                                value.grid(row=i2, column=1, pady=default_pady, padx=padx, sticky="nsew")
+                                value.insert(0, v1)
+                                # disable field conditionally
+                                if k1 in self.untouchable_keys:
+                                    value.configure(state="disabled")
+                                i2 += 1
+                            i1 += 1
+                        i += 1
+
+                        self.PATTERN_YSCROLL = Scrollbar(self.PATTERN_CANVAS, orient="vertical", command=self.PATTERN_CANVAS.yview)
+                        self.PATTERN_YSCROLL.pack(side="right", fill="y", expand=False)
+                        self.PATTERN_CANVAS.configure(yscrollcommand=self.PATTERN_YSCROLL.set)
+                        self.PATTERN_CANVAS.create_window((0, 20), window=self.PATTERN_FRAME, anchor="nw")
 
 
 
 
+            # define displayed data scrollbar
+            try:
+                self.YSCROLL.destroy()
+            except:
+                pass
+            self.YSCROLL = Scrollbar(self.DATA_FRAME, orient="vertical", command=self.CANVAS.yview)
+            self.YSCROLL.pack(side="right", fill="y", expand=False)
+            self.CANVAS.configure(yscrollcommand=self.YSCROLL.set)
 
+            self.CANVAS.create_window((0,0), window=self.JSON_CONTAINER, anchor="nw")
+            self.CANVAS.bind("<Configure>", lambda e: self.CANVAS.configure(scrollregion=self.CANVAS.bbox("all")))
 
+        except Exception as e:
+            print(e)
+            pass
+
+        # change label
+        self.info_label.config(text=f"{profile_name}")
+
+    def add_profile(self):
+        create_new = messagebox.askyesno("", "Vuoi creare un nuovo profilo?")
+
+    def remove_profile(self):
+        confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo profilo?")
 
 
 
@@ -1656,5 +1964,5 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Edit_Jobs_Window(root)
+    app = Home_Window(root)
     app.mainloop()
