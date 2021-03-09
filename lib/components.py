@@ -1836,6 +1836,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         label_size = 60
         txt_box_size = 40
         profile_name = ""
+        array_frame_size = 230
 
         # set new container
         self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
@@ -1879,14 +1880,13 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
                     if k == "pattern":
                         self.PATTERN_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=250, height=120, bg=appLib.color_red)
-                        self.PATTERN_FRAME_MASTER.grid(row=i, column=1, padx=padx, sticky="nsw")
+                        self.PATTERN_FRAME_MASTER.grid(row=i, column=1, padx=padx, pady=default_pady, sticky="nsw")
                         if not v:
                             self.PATTERN_FRAME_MASTER.grid(sticky="w")
                         self.PATTERN_FRAME_MASTER.pack_propagate(0)
 
-                        self.PATTERN_CANVAS = Canvas(self.PATTERN_FRAME_MASTER)
+                        self.PATTERN_CANVAS = Canvas(self.PATTERN_FRAME_MASTER, bg=appLib.color_orange)
                         self.PATTERN_CANVAS.pack(side="left", fill="both", expand=True)
-                        self.PATTERN_CANVAS.config(bg=appLib.color_orange)
                         self.PATTERN_CANVAS.bind("<Configure>", lambda e: self.PATTERN_CANVAS.configure(scrollregion=self.PATTERN_CANVAS.bbox("all")))
 
                         self.PATTERN_FRAME = Frame(self.PATTERN_FRAME_MASTER, bg=appLib.color_orange)
@@ -1913,12 +1913,45 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
                             i1 += 1
                         i += 1
 
-                        self.PATTERN_YSCROLL = Scrollbar(self.PATTERN_CANVAS, orient="vertical", command=self.PATTERN_CANVAS.yview)
+                        self.PATTERN_YSCROLL = Scrollbar(self.PATTERN_CANVAS, orient="vertical", width=15, command=self.PATTERN_CANVAS.yview)
                         self.PATTERN_YSCROLL.pack(side="right", fill="y", expand=False)
                         self.PATTERN_CANVAS.configure(yscrollcommand=self.PATTERN_YSCROLL.set)
-                        self.PATTERN_CANVAS.create_window((0, 20), window=self.PATTERN_FRAME, anchor="nw")
+                        self.PATTERN_CANVAS.create_window((0, array_frame_size), window=self.PATTERN_FRAME, anchor="nw")
 
+                    elif k == "pricelist":
+                        self.PRICELIST_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=250, height=120, bg=appLib.color_orange)
+                        self.PRICELIST_FRAME_MASTER.grid(row=i, column=1, padx=padx, pady=default_pady, sticky="nsw")
+                        if not v:
+                            self.PRICELIST_FRAME_MASTER.grid(sticky="w")
+                        self.PRICELIST_FRAME_MASTER.pack_propagate(0)
 
+                        self.PRICELIST_CANVAS = Canvas(self.PRICELIST_FRAME_MASTER, bg=appLib.color_green)
+                        self.PRICELIST_CANVAS.pack(side="left", fill="both", expand=True)
+                        self.PRICELIST_CANVAS.bind("<Configure>", lambda e: self.PRICELIST_CANVAS.configure(scrollregion=self.PRICELIST_CANVAS.bbox("all")))
+
+                        self.PRICELIST_FRAME = Frame(self.PRICELIST_FRAME_MASTER, bg=appLib.color_orange)
+
+                        for index, value in enumerate(v):
+                            subframe = Frame(self.PRICELIST_FRAME, bg=appLib.default_background)
+                            subframe.pack(anchor="w", pady=default_pady, padx=padx)
+
+                            i2 = 0
+                            for k1, v1 in value.items():
+                                Label(subframe, text=k1, bg=appLib.default_background).grid(row=i2, column=0, pady=default_pady, padx=padx, sticky="w")
+                                value = Entry(subframe, bg=appLib.default_background)
+                                value.grid(row=i2, column=1, pady=default_pady, padx=padx, sticky="nsew")
+                                value.insert(0, v1)
+                                # disable field conditionally
+                                if k1 in self.untouchable_keys:
+                                    value.configure(state="disabled")
+                                i2 += 1
+                            i1 += 1
+                        i += 1
+
+                        self.PRICELIST_YSCROLL = Scrollbar(self.PRICELIST_CANVAS, orient="vertical", width=18, command=self.PRICELIST_CANVAS.yview)
+                        self.PRICELIST_YSCROLL.pack(side="right", fill="y", expand=False)
+                        self.PRICELIST_CANVAS.configure(yscrollcommand=self.PRICELIST_YSCROLL.set)
+                        self.PRICELIST_CANVAS.create_window((0, 0), width=array_frame_size, window=self.PRICELIST_FRAME, anchor="nw")
 
 
             # define displayed data scrollbar
