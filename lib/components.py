@@ -1418,17 +1418,18 @@ class Edit_Jobs_Window(Custom_Toplevel):
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Edit Jobs")
         self.margin = 15
+        self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
+        self.__load_billing_profiles()
         self.__jobs_path = "../config_files/BusinessCat billing/jobs.json"
         self.__load_jobs()
         self.displayed_job = IntVar()
         self.displayed_job.set(0)
-        self.untouchable_keys = ["id", "billing_profile_id"]
+        self.untouchable_keys = ["id"]
         self.default_new_job = {
             "id":"",
             "name":"",
             "billing_profile_id":""
         }
-
 
 
         # define back button
@@ -1492,12 +1493,18 @@ class Edit_Jobs_Window(Custom_Toplevel):
         with open(self.__jobs_path, "r") as f:
             self.jobs = json.load(f)
 
+    def __load_billing_profiles(self):
+        with open(self.__billing_profiles_path, "r") as f:
+            self.billing_profiles = json.load(f)
+
     def __parse_data(self):
         keys = []
         values = []
         for child in self.JSON_CONTAINER.winfo_children():
             if isinstance(child, Label):
                 keys.append(child.cget("text"))
+            elif isinstance(child, ttk.Combobox):
+                values.append(self.cmb_var.get().split(" ")[0])
             elif isinstance(child, Entry):
                 values.append(child.get().strip())
         new_job = dict(zip(keys,values))
@@ -1524,6 +1531,14 @@ class Edit_Jobs_Window(Custom_Toplevel):
 
         new_id = "0"*(id_lenght-len(check_high)) + check_high
         return new_id
+
+    def __get_billing_profile_display_name(self, id):
+        name = ""
+        for profile in self.billing_profiles:
+            if profile["id"] == id:
+                name = profile["name"]
+                break
+        return f"{id} {name}".strip()
 
 
     """ PUBLIC METHODS """
@@ -1586,9 +1601,17 @@ class Edit_Jobs_Window(Custom_Toplevel):
                 key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
                 key.grid(row=i, column=0, pady=(2,1), padx=padx, sticky="nsew")
 
-                value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
-                value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
-                value.insert(0, v)
+                if k == "billing_profile_id":
+                    self.cmb_var = StringVar()
+                    self.billing_profile_combobox = ttk.Combobox(self.JSON_CONTAINER, width=28, textvariable=self.cmb_var, state="readonly")
+                    self.billing_profile_combobox['values'] = [f'{x["id"]} {x["name"]}' for x in self.billing_profiles]
+                    self.billing_profile_combobox.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
+                    self.billing_profile_combobox.bind('<Map>', lambda event: self.cmb_var.set(self.__get_billing_profile_display_name(v)))
+
+                else:
+                    value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
+                    value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
+                    value.insert(0, v)
 
                 # conditionally disable fields
                 if k in self.untouchable_keys:
@@ -1635,6 +1658,16 @@ class Edit_Jobs_Window(Custom_Toplevel):
             self.__save_data()  # save current job
             self.display_data() # display destination job
 
+    # override
+    def open_new_window(self, master, new_window):
+        """ use this method to pass from one window to another"""
+        data = self.__parse_data()
+        self.__save_data(data)
+
+        self.destroy()
+        new = new_window(master)
+        new.prior_window = type(self)
+
 class Edit_BillingProfiles_Window(Custom_Toplevel):
     def __init__(self, master=None):
         self.width = 500
@@ -1648,10 +1681,9 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         self.__load_billing_profiles()
         self.displayed_profile = IntVar()
         self.displayed_profile.set(0)
-        self.untouchable_keys = ["id"]
-        self.float_fields = ["threshold_hours", "time_to_add", "price"]
+        self.untouchable_keys = ["id", "tag"]
         self.default_profile = {
-            "threshold_hours": 0.0,
+            "threshold_hours": 8.0,
             "add_over_threshold": True,
             "time_to_add": 0.0,
             "pattern": [],
@@ -1697,14 +1729,14 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         }
         self.default_pattern_object = {
             "perform": "/",
-            "amount": 2,
-            "keep": True
+            "amount": "",
+            "keep": "1"
         }
 
 
 
         # define back button
-        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda: self.open_new_window(master, self.prior_window))
         self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
 
         ####### define main frame structure
@@ -1767,13 +1799,70 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
     def __parse_data(self):
         keys = []
         values = []
+
+        exclude = ["pattern", "pricelist"]
+
         for child in self.JSON_CONTAINER.winfo_children():
             if isinstance(child, Label):
-                keys.append(child.cget("text"))
+                if child.cget("text") not in exclude:
+                    keys.append(child.cget("text"))
             elif isinstance(child, Entry):
                 values.append(child.get().strip())
-        new_job = dict(zip(keys,values))
-        return new_job
+        new_profile = dict(zip(keys, values))
+
+        for val in exclude:
+            new_profile[val] = []
+
+        # parse pattern and pricelist
+        for child in self.PATTERN_FRAME.winfo_children():
+            if isinstance(child, Frame):
+                pattern_keys = []
+                pattern_values = []
+                for subchild in child.winfo_children():
+                    if isinstance(subchild, Label):
+                        if subchild.cget("text") in ["-", "+"]: continue
+                        pattern_keys.append(subchild.cget("text"))
+                    elif isinstance(subchild, Entry):
+                        pattern_values.append(subchild.get().strip())
+                if pattern_keys:
+                    new_profile["pattern"].append(dict(zip(pattern_keys, pattern_values)))
+
+        for child in self.PRICELIST_FRAME.winfo_children():
+            if isinstance(child, Frame):
+                pricelist_keys = []
+                pricelist_values = []
+                for subchild in child.winfo_children():
+                    if isinstance(subchild, Label):
+                        pricelist_keys.append(subchild.cget("text"))
+                    elif isinstance(subchild, Entry):
+                        pricelist_values.append(subchild.get().strip())
+                new_profile["pricelist"].append(dict(zip(pricelist_keys, pricelist_values)))
+
+        # parse values
+        try:
+            for key in new_profile:
+                if key in ["threshold_hours","time_to_add", "amount", "price"]:
+                    val = str(new_profile[key]).replace(",", ".")
+                    new_profile[key] = float(val)
+                if key in ["keep", "add_over_threshold"]:
+                    new_profile[key] = bool(int(new_profile[key]))
+
+                if isinstance(new_profile[key], list):
+                    for index, obj in enumerate(new_profile[key]):
+                        for subkey in obj:
+                            if subkey in ["threshold_hours", "time_to_add", "amount", "price"]:
+                                val = str(new_profile[key][index][subkey]).replace(",",".")
+                                try:
+                                    new_profile[key][index][subkey] = int(val)
+                                except:
+                                    new_profile[key][index][subkey] = float(val)
+                            if subkey in ["keep", "add_over_threshold"]:
+                                new_profile[key][index][subkey] = bool(int(new_profile[key][index][subkey]))
+        except Exception as e:
+            messagebox.showerror("ERRORE", f"Il campo {key} presenta un errore\n\nERRORE: {e}\n\nNecessaria correzione dell'errore per proseguire.")
+            raise
+
+        return new_profile
 
     def __save_data(self, new_data=None):
         """ save current displayed job """
@@ -1785,13 +1874,13 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         with open(self.__billing_profiles_path, "w") as f:
             f.write(json.dumps(self.billing_profiles, indent=4))
 
-    def __get_new_job_id(self):
+    def __get_new_id(self):
         id_lenght = 4
 
         check_high = 0
-        for job in self.jobs:
-            if int(job["id"]) > check_high:
-                check_high = int(job["id"])
+        for entry in self.billing_profiles:
+            if int(entry["id"]) > check_high:
+                check_high = int(entry["id"])
         check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
 
         new_id = "0"*(id_lenght-len(check_high)) + check_high
@@ -1801,7 +1890,8 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
     """ PUBLIC METHODS """
     def next_profile(self):
 
-        self.__save_data(self.__parse_data())
+        data = self.__parse_data()
+        self.__save_data(data)
 
         max_lenght = len(self.billing_profiles) -1 if len(self.billing_profiles) > 0 else 0
         if self.displayed_profile.get() < max_lenght:
@@ -1836,7 +1926,6 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         label_size = 60
         txt_box_size = 40
         profile_name = ""
-        array_frame_size = 230
 
         # set new container
         self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
@@ -1891,14 +1980,18 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
                         self.PATTERN_FRAME = Frame(self.PATTERN_FRAME_MASTER, bg=appLib.color_orange)
 
-                        self.ADD_PATTERN_BTN = Label(self.PATTERN_FRAME, text="+", width=15, bg=appLib.color_grey, fg=appLib.color_green)
-                        self.ADD_PATTERN_BTN.pack(anchor="w")
+                        buttons_frame = Frame(self.PATTERN_FRAME, bg=appLib.color_orange)
+                        buttons_frame.pack()
+                        self.ADD_PATTERN_BTN = Label(buttons_frame, text="+", width=10, bg=appLib.color_grey, fg=appLib.color_green)
+                        self.ADD_PATTERN_BTN.bind("<Button-1>", lambda e: self.add_pattern())
+                        self.ADD_PATTERN_BTN.pack(side="left", anchor="center", padx=padx)
+                        self.RMV_PATTERN_BTN = Label(buttons_frame, text="-", width=10, bg=appLib.color_grey, fg=appLib.color_red)
+                        self.RMV_PATTERN_BTN.bind("<Button-1>", lambda e: self.rmv_pattern())
+                        self.RMV_PATTERN_BTN.pack(side="right", anchor="center", padx=padx)
 
                         for index, value in enumerate(v):
                             subframe = Frame(self.PATTERN_FRAME, bg=appLib.default_background)
                             subframe.pack(anchor="w", pady=default_pady, padx=padx)
-                            rmv_lbl = Label(subframe, text="-", width=2, bg=appLib.color_grey, fg=appLib.color_red)
-                            rmv_lbl.grid(row=0, column=2, pady=default_pady, padx=padx, sticky="w")
 
                             i2 = 0
                             for k1, v1 in value.items():
@@ -1913,10 +2006,10 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
                             i1 += 1
                         i += 1
 
-                        self.PATTERN_YSCROLL = Scrollbar(self.PATTERN_CANVAS, orient="vertical", width=15, command=self.PATTERN_CANVAS.yview)
+                        self.PATTERN_YSCROLL = Scrollbar(self.PATTERN_CANVAS, orient="vertical", width=18, command=self.PATTERN_CANVAS.yview)
                         self.PATTERN_YSCROLL.pack(side="right", fill="y", expand=False)
                         self.PATTERN_CANVAS.configure(yscrollcommand=self.PATTERN_YSCROLL.set)
-                        self.PATTERN_CANVAS.create_window((0, array_frame_size), window=self.PATTERN_FRAME, anchor="nw")
+                        self.PATTERN_CANVAS.create_window((0, 0), width=230, window=self.PATTERN_FRAME, anchor="nw")
 
                     elif k == "pricelist":
                         self.PRICELIST_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=250, height=120, bg=appLib.color_orange)
@@ -1951,7 +2044,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
                         self.PRICELIST_YSCROLL = Scrollbar(self.PRICELIST_CANVAS, orient="vertical", width=18, command=self.PRICELIST_CANVAS.yview)
                         self.PRICELIST_YSCROLL.pack(side="right", fill="y", expand=False)
                         self.PRICELIST_CANVAS.configure(yscrollcommand=self.PRICELIST_YSCROLL.set)
-                        self.PRICELIST_CANVAS.create_window((0, 0), width=array_frame_size, window=self.PRICELIST_FRAME, anchor="nw")
+                        self.PRICELIST_CANVAS.create_window((0, 0), width=230, window=self.PRICELIST_FRAME, anchor="nw")
 
 
             # define displayed data scrollbar
@@ -1975,12 +2068,49 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
     def add_profile(self):
         create_new = messagebox.askyesno("", "Vuoi creare un nuovo profilo?")
+        if create_new:
+            new_profile = copy.deepcopy(self.default_profile)
+            new_profile["id"] = self.__get_new_id()
+            self.billing_profiles.append(new_profile)
+            go_to_last = messagebox.askyesno("", "Il nuovo profilo è stato inizializzato, vuoi visualizzarlo?")
+            self.__save_data(self.__parse_data())  # save current
+
+            if go_to_last:
+                self.displayed_profile.set(len(self.billing_profiles)-1) # set destination to the new one
+                self.display_data() # display destination
 
     def remove_profile(self):
         confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo profilo?")
+        if confirm_delete:
+            self.billing_profiles.pop(self.displayed_profile.get())
+            self.displayed_profile.set(self.displayed_profile.get() - 1)  # set destination to the previous one
+            self.__save_data()  # save current
+            self.display_data() # display destination
 
+    def add_pattern(self):
+        create_new = messagebox.askyesno("", "Aggiungere un pattern?")
+        if create_new:
+            new_pattern = copy.deepcopy(self.default_pattern_object)
+            self.billing_profiles[self.displayed_profile.get()]["pattern"].append(new_pattern)
+            #self.__save_data(self.__parse_data())  # save current
+            self.display_data()
 
+    def rmv_pattern(self):
+        rmv_pattern = messagebox.askyesno("", "Rimuovere l'ultimo pattern?")
+        if rmv_pattern:
+            if len(self.billing_profiles[self.displayed_profile.get()]["pattern"]) > 0:
+                self.billing_profiles[self.displayed_profile.get()]["pattern"].pop()
+                self.display_data()
 
+    # override
+    def open_new_window(self, master, new_window):
+        """ use this method to pass from one window to another"""
+        data = self.__parse_data()
+        self.__save_data(data)
+
+        self.destroy()
+        new = new_window(master)
+        new.prior_window = type(self)
 
 
 
