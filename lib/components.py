@@ -5,6 +5,7 @@ import copy
 import uuid
 import json
 import shutil
+import datetime
 import fitz
 import pandas as pd
 from pandastable import Table, TableModel, config as tab_config
@@ -427,60 +428,35 @@ class Splitter_Window(Custom_Toplevel):
         self.check_send_mail()
 
 
+    """ PRIVATE METHODS """
     def __BADGES_FROM_PAYCHECKS(self, filename):
         inputpdf = fitz.open(filename)
 
         if not os.path.exists(self.BADGES_PATH):
             os.mkdir(self.BADGES_PATH)
 
-        full_name = ""
+        check_name = ""
         # per ogni pagina
         for i in range(inputpdf.pageCount):
             page = inputpdf.loadPage(i)
-            blocks = page.getTextBlocks()
-            blocks.sort(key=lambda block: block[1])
+            page_info = self.__get_page_owner(page)
+            is_badge = page_info[0]
+            page_owner = page_info[1]
 
-            # per ogni blocco di testo
-            for index, x in enumerate(blocks):
-                block_data = x[4].split("\n")
+            if "riepilogo" in page_owner.lower():
+                break
 
-                # per ogni parola nel blocco di testo
-                for v in block_data:
-                    if "cognome" in v.lower():
-
-                        # retriving name
-                        try:
-                            name = blocks[index + 1][4].split("\n")[1]
-                            name = [w[0].upper() + w[1:].lower() for w in name.split(" ")]
-                        except IndexError:
-                            name = blocks[index + 2][4].split("\n")[1]
-                            name = [w[0].upper() + w[1:].lower() for w in name.split(" ")]
-
-                        current_name = ""
-                        for i_, word in enumerate(name):
-                            current_name += word + " "
-                        current_name = current_name[:-1]
-
-                        if "riepilogo" in current_name.lower():
-                            break
-
-                        # salva il cartellino
-                        if current_name != full_name and current_name != "Datasassunzione" and current_name:
-                            badge = fitz.Document()
-                            badge.insertPDF(inputpdf, from_page=i, to_page=i)
-                            badge.save(f"{self.BADGES_PATH}/" + current_name + ".pdf")
-                            full_name = current_name
+            # salva il cartellino
+            if is_badge:
+                if page_owner and page_owner != check_name and "datasassunzione" not in page_owner:
+                    badge = fitz.Document()
+                    badge.insertPDF(inputpdf, from_page=i, to_page=i)
+                    badge.save(f"{self.BADGES_PATH}/" + page_owner + ".pdf")
+                    check_name = page_owner
 
     def __SPLIT_PAYCHECKS(self, file_to_split):
         inputpdf = fitz.open(file_to_split)
         check_name = ""
-
-        # possible slots where the name is stored in the pdf {slot:array_split_at}
-        lookup_range = {
-            19: 1,
-            21: 1,
-            117: 0
-        }
 
         # chech if file_to_split exists
         if not os.path.exists(file_to_split):
@@ -493,53 +469,31 @@ class Splitter_Window(Custom_Toplevel):
         # per ogni pagina
         for i in range(inputpdf.pageCount):
             page = inputpdf.loadPage(i)
-            blocks = page.getText("blocks")
-            blocks.sort(key=lambda block: block[1])  # sort vertically ascending
+            page_info = self.__get_page_owner(page=page)
+            is_badge = page_info[0]
+            paycheck_owner =page_info[1]
 
-            paycheck_owner = None
-
-            for index, b in enumerate(blocks):
-                # per ogni range in cui è possibile trovare il nome
-                for key in lookup_range:
-                    if index == key:
-
-                        name = b[4]
-
-                        if not name.startswith("<"):
-                            name = name.split('\n')[lookup_range[key]]
-
-                        if key != 117:
-                            if name != "Codicesdipendente" \
-                                    and name != "CodicesFiscale" \
-                                    and not name[0].isdigit() \
-                                    and not name.startswith("<"):
-                                name_ = name.split(" ")
-                                new_name = ""
-                                for word in name_:
-                                    new_name += word[0].upper() + word[1:].lower() + " "
-                                paycheck_owner = new_name[:-1]
-                        else:
-                            name_ = (name[12:]).split()[:-1]
-                            new_name = ""
-                            for word in name_:
-                                new_name += word[0].upper() + word[1:].lower() + " "
-                            paycheck_owner = new_name[:-1]
-
-            if not paycheck_owner or paycheck_owner == "Detrazioni":
-                print(f"Non ho trovato il proprietario della busta numero {i}, potrebbe essere un cartellino")
+            if is_badge:
+                #print(f"La pagina numero {i} è un cartellino")
                 continue
+
+            # check integrity
+            if not paycheck_owner:
+                raise Exception(f"La pagina numero {i} non ha un nome al suo interno!")
+            if "riepilogo generale" in paycheck_owner.lower() or "detrazioni" in paycheck_owner.lower():
+                continue
+
+            paycheck = fitz.Document()
+
+            # se il nome è lo stesso del foglio precedente salvo il pdf come due facciate
+            if paycheck_owner == check_name:
+                paycheck.insertPDF(inputpdf, from_page=i - 1, to_page=i)
+            # altrimenti salvo solo la pagina corrente
             else:
-                paycheck = fitz.Document()
+                paycheck.insertPDF(inputpdf, from_page=i, to_page=i)
 
-                # se il nome è lo stesso del foglio precedente salvo il pdf come due facciate
-                if paycheck_owner == check_name:
-                    paycheck.insertPDF(inputpdf, from_page=i - 1, to_page=i)
-                # altrimenti salvo solo la pagina corrente
-                else:
-                    paycheck.insertPDF(inputpdf, from_page=i, to_page=i)
-
-                check_name = paycheck_owner
-                paycheck.save(f"{self.PAYCHECKS_PATH}/" + paycheck_owner + ".pdf")
+            check_name = paycheck_owner
+            paycheck.save(f"{self.PAYCHECKS_PATH}/" + paycheck_owner + ".pdf")
 
     def __SPLIT_BADGES(self, file_to_split):
         """ this method is used to split old type badges, badges are now mainly extracted throught __BADGES_FROM_PAYCHECKS """
@@ -557,49 +511,77 @@ class Splitter_Window(Custom_Toplevel):
             # per ogni pagina
             for i in range(inputpdf.pageCount):
                 page = inputpdf.loadPage(i)
-                obj = page.getTextBlocks()
-                full_name = ""
-
-                # provo a cercare il nome in uno slot
-                try:
-                    for index, x in enumerate(obj[37]):
-                        if not str(x)[0].isdigit():
-                            name_arr = (x.split("\n")[0]).split(" ")
-
-                            for string in range(len(name_arr)):
-                                if name_arr[string]:
-                                    full_name += (name_arr[string][0].upper() + name_arr[string][1:].lower() + " ")
-
-                            full_name = (full_name[:-1])
-
-                    if not full_name:
-                        raise
-
-                # altrimenti lo cerco nell'altro
-                except:
-                    for index, x in enumerate(obj[36]):
-                        if not str(x)[0].isdigit():
-                            name_arr = (x.split("\n")[0]).split(" ")
-
-                            for string in range(len(name_arr)):
-                                if name_arr[string]:
-                                    full_name += (name_arr[string][0].upper() + name_arr[string][1:].lower() + " ")
-
-                            full_name = (full_name[:-1])
-
-                    if not full_name:
-                        raise
+                page_info = self.__get_page_owner(page)
+                page_owner = page_info[1]
 
                 # salvo il cartellino
                 badge = fitz.Document()
                 badge.insertPDF(inputpdf, from_page=i, to_page=i)
-                badge.save(f"{self.BADGES_PATH}/" + full_name + ".pdf")
+                badge.save(f"{self.BADGES_PATH}/" + page_owner + ".pdf")
 
         except:
             raise Exception("#######################################\n"
                             "ERRORE nella divisione dei cartellini\n"
                             "#######################################\n")
 
+    def __get_page_owner(self, page):
+        blocks = page.getText("blocks")
+        blocks.sort(key=lambda block: block[1])  # sort vertically ascending
+
+        months = [
+            "gennaio",
+            "febbraio",
+            "marzo",
+            "aprile",
+            "maggio",
+            "giugno",
+            "luglio",
+            "agosto",
+            "settembre",
+            "ottobre",
+            "novembre",
+            "dicembre"
+        ]
+
+
+        name = ""
+        is_badge = False
+
+        for index, b in enumerate(blocks):
+            if "COGNOME" in b[4].upper() and "NOME" in b[4].upper():
+                name_array = blocks[index+1][4].split("\n")
+
+                # check cessato or assunto
+                if "cessato" in name_array[0].lower() or "assunto" in name_array[0].lower():
+                    name_array = blocks[index+2][4].split("\n")
+
+                if "/" in name_array[0]:
+                    is_badge = True
+                name = name_array[1]
+
+                # if name is riepilogo generale fix it
+                if "riepilogo generale" in name_array[0].lower():
+                    name = name_array[0]
+
+                # if name is month fix it
+                try:
+                    if name.split()[0].lower() in months:
+                        name = name_array[0]
+                except:
+                    raise Exception("ERROR: name unclear in a badge")
+
+                break
+
+        # parse name
+        new_name = ""
+        for word in name.split():
+            new_name += (word[0].upper() + word[1:].lower() + " ")
+        page_owner = new_name[:-1]
+
+        return (is_badge, page_owner)
+
+
+    """ PUBLIC METHODS """
     def toggle_paycheck_checkbox(self, checkbox_status):
 
         # if check was unchecked disable all badges elements
@@ -1399,7 +1381,7 @@ class Billing_Landing_Window(Custom_Toplevel):
         self.billing_profiles_button.grid(column=2, row=0, pady=5, padx=5)
         self.apply_balloon_to_widget(self.billing_profiles_button, "Visualizza e edita i possiibli profili di fatturazione")
 
-        self.start_billing_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"))
+        self.start_billing_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Billing_Window))
         self.start_billing_btn.grid(column=1, row=2, pady=self.margin, padx=5)
 
         #resize grid
@@ -1732,7 +1714,6 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
             "amount": "",
             "keep": "1"
         }
-
 
 
         # define back button
@@ -2112,9 +2093,193 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         new = new_window(master)
         new.prior_window = type(self)
 
+class Billing_Window(Custom_Toplevel):
+    def __init__(self, master=None):
+        self.width = 500
+        self.height = 450 # initial resize 650x700
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Billing")
+        self.margin = 15
+
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button.pack(anchor="w", pady=(self.margin,0), padx=self.margin)
+
+        #display first view
+        self.__first_view()
 
 
+    """ PRIVATE METHODS """
+    def __set_badges(self):
+        filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",filetype=[("Excel File", "*.xlsx*"), ("Excel File", "*.xls*")])
+        if not filename:
+            return
+        if filename != self.choosen_badge_var.get():
+            self.choosen_badge_var.set(filename)
+            self.dynamic_text.set(self.instruction_steps[1])
+            self.__unlock_widget(self.month_combobox)
 
+    def __set_month(self):
+        month = self.month_combobox_var.get()
+        choosen_month = self.months_checkup[month]
+        if choosen_month != self.choosen_month.get():
+            self.choosen_month.set(choosen_month)
+            self.dynamic_text.set(self.instruction_steps[2])
+            self.__unlock_widget(self.year_combobox)
+
+    def __set_year(self):
+        choosen_year = self.year_combobox_var.get()
+        if choosen_year != self.choosen_year.get():
+            self.choosen_year.set(choosen_year)
+            self.dynamic_text.set(self.instruction_steps[3])
+            self.__unlock_widget(self.start_bill_btn)
+
+    def __unlock_widget(self, widget):
+        if str(widget.cget("state")) == "disabled":
+            try:
+                widget.configure(state="readonly")
+            except:
+                widget.configure(state="normal")
+
+    def __clear_view(self):
+        for child in self.winfo_children():
+            child.pack_forget()
+
+    def __init_BillingManager(self):
+
+        self.Biller = appLib.BillingManager(month=int(self.choosen_month.get()), year=int(self.choosen_year.get()))
+        self.Biller.set_badges_path(self.choosen_badge_var.get())
+
+
+    def __second_view(self):
+
+        second_view_width = 650
+        second_view_height = 700
+
+        # check if bill name has been specified
+        if not self.bill_name_var.get():
+            contine_billing = messagebox.askokcancel("Campo Vuoto","Il Nome Fattura è vuoto. Si desidera continuare senza un nome fattura?")
+            if not contine_billing:
+                return
+
+        # clear previous view and resize
+        anno = self.choosen_year.get()
+        mese = self.choosen_month.get()
+        self.__clear_view()
+        self.geometry(f"{second_view_width}x{second_view_height}+{500}+{50}")
+
+
+        print("anno >> ", anno, "mese >>", mese)
+        #self.__init_BillingManager()
+
+    def __first_view(self):
+        self.months_checkup = {
+            "Gennaio":1,
+            "Febbraio":2,
+            "Marzo": 3,
+            "Aprile": 4,
+            "Maggio": 5,
+            "Giugno": 6,
+            "Luglio": 7,
+            "Agosto": 8,
+            "Settembre": 9,
+            "Ottobre": 10,
+            "Novembre": 11,
+            "Dicembre": 12
+        }
+        self.instruction_steps = [
+            "1. Imposta un Nome Fattura e scegli il file excel contenente i cartellini",
+            "2. Seleziona il mese",
+            "3. Seleziona l'anno",
+            "4. Pronti a fatturare!"
+        ]
+
+        default_padx = 5
+        default_pady = 5
+
+        # define master frame
+        self.MASTER_FRAME = Frame(self, bg=appLib.color_orange)
+        self.MASTER_FRAME.pack(anchor="center", padx=self.margin, pady=self.margin, fill="both")
+
+        # define master Label
+        self.MASTER_INSTRUCTION = Label(self.MASTER_FRAME, text="Segui l'istruzione qui sotto per procedere con la fatturazione", font=("Calibri", 16, "bold"), wraplength=250, bg=appLib.color_orange, fg=appLib.color_light_orange)
+        self.MASTER_INSTRUCTION.pack(anchor="center")
+
+        # define dynamic instruction
+        self.dynamic_text = StringVar()
+        self.dynamic_text.set(self.instruction_steps[0])
+        self.dynamic_instruction = Label(self.MASTER_FRAME, textvariable=self.dynamic_text, font=("Calibri", 11), bg=appLib.color_orange)
+        self.dynamic_instruction.pack(anchor="center", pady=10)
+
+        # FLOW FRAME
+        self.FLOW_FRAME = Frame(self.MASTER_FRAME, bg=appLib.default_background)
+        self.FLOW_FRAME.pack(anchor="center", padx=self.margin, pady=self.margin, fill="both")
+
+        # BILL NAME
+        self.BILL_NAME_FRAME = Frame(self.FLOW_FRAME, bg=appLib.default_background)
+        self.BILL_NAME_FRAME.pack(side="top", padx=self.margin, pady=default_pady, fill="x")
+
+        bill_name_lbl = Label(self.BILL_NAME_FRAME, text="Nome Fattura", bg=appLib.default_background)
+        bill_name_lbl.grid(row=0, column=0, padx=default_padx, pady=default_pady, sticky="nsew")
+
+        self.bill_name_var = StringVar()
+        self.bill_name_entry = Entry(self.BILL_NAME_FRAME, textvariable=self.bill_name_var)
+        self.bill_name_entry.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="nsew")
+
+        # BADGES FRAME
+        self.BADGES_FRAME = Frame(self.FLOW_FRAME, bg=appLib.default_background)
+        self.BADGES_FRAME.pack(side="top", padx=self.margin, pady=default_pady, fill="x")
+
+        choose_badge_btn = Button(self.BADGES_FRAME, text="Cartellini", command= self.__set_badges)
+        choose_badge_btn.grid(row=0, column=0, padx=default_padx, pady=default_pady, sticky="nsew")
+
+        self.choosen_badge_var = StringVar()
+        self.choosen_badge_entry = Entry(self.BADGES_FRAME, textvariable=self.choosen_badge_var, state="disabled")
+        self.choosen_badge_entry.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="nsew")
+
+        # MONTH FRAME
+        self.MONTH_FRAME = Frame(self.FLOW_FRAME, bg=appLib.default_background)
+        self.MONTH_FRAME.pack(side="top", padx=self.margin, pady=default_pady, fill="x")
+
+        month_label = Label(self.MONTH_FRAME, text="Mese", bg=appLib.default_background)
+        month_label.grid(row=0, column=0, padx=default_padx, pady=default_pady, sticky="nsew")
+
+        self.month_combobox_var = StringVar()
+        self.choosen_month = IntVar()
+        self.month_combobox = ttk.Combobox(self.MONTH_FRAME, textvariable=self.month_combobox_var, state="disabled", width=30) #change state to readonly when active
+        self.month_combobox['values'] = [x for x in self.months_checkup.keys()]
+        self.month_combobox.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="nsew")
+        self.month_combobox.bind("<<ComboboxSelected>>", lambda e: self.__set_month())
+
+        # YEAR FRAME
+        self.YEAR_FRAME = Frame(self.FLOW_FRAME, bg=appLib.default_background)
+        self.YEAR_FRAME.pack(side="top", padx=self.margin, pady=default_pady, fill="x")
+
+        year_label = Label(self.YEAR_FRAME, text="Anno", bg=appLib.default_background)
+        year_label.grid(row=0, column=0, padx=default_padx, pady=default_pady, sticky="nsew")
+
+        self.year_combobox_var = StringVar()
+        self.choosen_year = IntVar()
+        self.year_combobox = ttk.Combobox(self.YEAR_FRAME, state="disabled", width=30)
+        self.year_combobox['values'] = [(datetime.datetime.now().year)+x for x in range(5)]
+        self.year_combobox.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="nsew")
+        self.year_combobox.bind("<<ComboboxSelected>>", lambda e: self.__set_year())
+
+        # resize all grids in self.FLOW_FRAME
+        for child in self.FLOW_FRAME.winfo_children():
+            if isinstance(child, Frame):
+                size = child.grid_size()
+                for col in range(size[0]):
+                    if col == 0:
+                        child.grid_columnconfigure(col, minsize=100)
+                    else:
+                        child.grid_columnconfigure(col, weight=1)
+
+        # START BILL BUTTON
+        self.start_bill_btn = Button(self.FLOW_FRAME, text="Fattura", state="disabled", command= self.__second_view)
+        self.start_bill_btn.pack(side="bottom", fill="x", pady=default_pady*2, padx=default_padx*2)
 
 
 

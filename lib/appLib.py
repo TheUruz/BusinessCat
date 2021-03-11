@@ -912,9 +912,9 @@ class PaycheckController():
         return problems
 
 class BillingManager():
-    def __init__(self):
+    def __init__(self, month=datetime.datetime.now().month, year=datetime.datetime.now().year):
         self.bill_name = "Fattura di prova.xlsx"
-        self.badges_path = None#badges_path
+        self.badges_path = None #badges_path
         self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
         self.name_cell = "B5" # in che cella del badge_path si trova il nome
         self.pairing_schema = {
@@ -936,9 +936,7 @@ class BillingManager():
         self.__load_jobs()
 
         # set billing time
-        self.billing_year = datetime.datetime.now().year
-        self.billing_month = 1 ##### change here to fetch month in a different way
-        self._holidays = holidays.IT(years=[self.billing_year, self.billing_year - 1])
+        self.set_billing_time(month, year)
 
         print(">> BillingManager Ready")
 
@@ -1070,6 +1068,11 @@ class BillingManager():
         if not os.path.exists(badges_path):
             raise ValueError("ERROR: Cannot find badges path")
         self.badges_path = badges_path
+
+    def set_billing_time(self, month, year):
+        self.billing_year = int(year)
+        self.billing_month = int(month)
+        self._holidays = holidays.IT(years=[self.billing_year, self.billing_year - 1])
 
     def parse_badges(self):
         """
