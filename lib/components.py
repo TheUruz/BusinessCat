@@ -2109,9 +2109,12 @@ class Billing_Window(Custom_Toplevel):
 
         #display first view
         self.__first_view()
+        self.__second_view()
 
 
     """ PRIVATE METHODS """
+
+    # first_view
     def __set_badges(self):
         filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",filetype=[("Excel File", "*.xlsx*"), ("Excel File", "*.xls*")])
         if not filename:
@@ -2147,16 +2150,28 @@ class Billing_Window(Custom_Toplevel):
         for child in self.winfo_children():
             child.pack_forget()
 
+    # second_view
     def __init_BillingManager(self):
 
         self.Biller = appLib.BillingManager(month=self.choosen_month.get(), year=self.choosen_year.get())
         self.Biller.set_badges_path(self.choosen_badge_var.get())
 
+    def __set_select_all(self):
+        if self.SELECT_ALL_CHKBOX_var.get() == True:
+            self.SELECT_ALL_CHKBOX_var.set(1)
+        elif self.SELECT_ALL_CHKBOX_var.get() == False:
+            self.SELECT_ALL_CHKBOX_var.set(0)
+
+        check_status = self.SELECT_ALL_CHKBOX.get()   ############ TROVARE UN MODO DI LEGGERE LE VARIE CHECKBOX <<<
+        print(type(check_status), check_status)
 
     def __second_view(self):
 
         second_view_width = 650
         second_view_height = 700
+
+        default_padx = 5
+        default_pady = 5
 
         # check if bill name has been specified
         if not self.bill_name_var.get():
@@ -2168,12 +2183,46 @@ class Billing_Window(Custom_Toplevel):
         self.__clear_view()
         self.geometry(f"{second_view_width}x{second_view_height}+{500}+{50}")
 
-        self.__init_BillingManager()
-        total_content = self.Biller.parse_badges()
+        #self.__init_BillingManager()
+        #total_content = self.Biller.parse_badges()
 
         # TOP_MASTER_FRAME
         self.TOP_MASTER_FRAME = Frame(self, bg=appLib.color_orange)
-        self.TOP_MASTER_FRAME.pack(anchor="center", padx=self.margin, pady=self.margin, fill="both")
+        self.TOP_MASTER_FRAME.pack(anchor="center", padx=self.margin, pady=self.margin, fill="both", expand=True)
+
+        # INFO FRAME
+        self.INFO_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_orange)
+        self.INFO_FRAME.pack(anchor="center", padx=default_padx, pady=default_pady, fill="both")
+
+        lbl_text = f"""'{self.bill_name_var.get()}'\tPeriodo: {self.choosen_month.get()}/{self.choosen_year.get()}"""
+        info_label = Label(self.INFO_FRAME, text=lbl_text, font=("Calibri", 14, "bold"), bg=appLib.color_light_orange)
+        info_label.pack(anchor="center", fill="x", padx=default_padx, pady=(default_pady, 60))
+
+        instruction_lbl = Label(self.INFO_FRAME, text="Ho trovato questi lavoratori nei cartellini, quali devo inserire in fattura?", font=("Calibri", 14, "bold"), bg=appLib.color_orange, fg=appLib.color_light_orange)
+        instruction_lbl.pack(fill="x", padx=default_padx, pady=default_pady*2)
+
+        # SELECT ALL
+        self.SELECT_ALL_CHKBOX_var = BooleanVar()
+        self.SELECT_ALL_CHKBOX = Checkbutton(self.INFO_FRAME, text="Seleziona tutti", var=self.SELECT_ALL_CHKBOX_var, font=("Calibri", 12, "bold"), bg=appLib.color_orange, command=self.__set_select_all)
+        self.SELECT_ALL_CHKBOX.pack(anchor="center", padx=default_padx)
+
+        test = ["GOMEZ ADAMS", "RICK SANCHEZ", "APOLLO CREED"]
+
+        # NAMES FRAME
+        self.NAMES_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_light_orange)
+        self.NAMES_FRAME.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
+        self.NAMES_FRAME.pack_propagate(0)
+
+        # putting names in frame
+        for n in test:
+            name_checkbtn = Checkbutton(self.NAMES_FRAME, text=n, font=("Calibri", 12), bg=appLib.color_light_orange)
+            name_checkbtn.pack(anchor="w", pady=default_pady, padx=default_padx)
+
+        # CONTINUE BUTTON
+        self.CONTINUE_BTN = Button(self.TOP_MASTER_FRAME, width=30, text="CONFERMA E PROCEDI")
+        self.CONTINUE_BTN.pack(anchor="center", pady=(0,default_pady*2))
+
+
 
     def __first_view(self):
         self.months_checkup = {
@@ -2293,5 +2342,6 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Home_Window(root)
+    app = Billing_Window(root)
+
     app.mainloop()
