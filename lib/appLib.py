@@ -830,7 +830,7 @@ class PaycheckController():
         destination_workbook = openpyxl.load_workbook(self.verify_filename)
         ws = destination_workbook["temp"]
 
-        # create empty rows for uncommon_indexes
+        # create empty rows for uncommon_indexes (shouldnt be used)
         if leave_blanks:
             index_checkup = {k: v for k, v in enumerate(common_df.index.values)}
             # add blank lines based on index_checkup
@@ -865,21 +865,24 @@ class PaycheckController():
                 worker_check = {}
                 worker_errors = []
 
-                # gather worker data
+                # gather worker data from his row
                 for key in matching:
                     val = row_values[matching[key]]
                     if isinstance(val, str) and "€" in val:
                         val = val.replace("€", "").replace("-", "").replace(",", ".").strip()
                         worker_check[key] = float(val) if val else 0
+                    elif not val:
+                        worker_check[key] = 0
+                    elif isinstance(val, float) or isinstance(val, int):
+                        worker_check[key] = val
 
                 # find worker errors
                 for data in worker_check:
-                    check_val = data + CHECK_SUFFIX
-                    if CHECK_SUFFIX not in data and check_val in worker_check:
+                    if CHECK_SUFFIX not in data:
                         try:
-                            if worker_check[data] - worker_check[check_val] != 0:
+                            if worker_check[data] - worker_check[data + CHECK_SUFFIX] != 0:
                                 worker_errors.append(data)
-                                worker_errors.append(check_val)
+                                worker_errors.append(data + CHECK_SUFFIX)
                         except Exception as e:
                             print(e)
 
@@ -1068,6 +1071,7 @@ class BillingManager():
         if not os.path.exists(badges_path):
             raise ValueError("ERROR: Cannot find badges path")
         self.badges_path = badges_path
+        print("** badges_path caricato")
 
     def set_billing_time(self, month, year):
         self.billing_year = int(year)
@@ -1146,6 +1150,9 @@ class BillingManager():
 
         self.total_content = total_content
         return total_content
+
+
+
 
     def parse_day(self,day, day_content):
         """ Pointing out what is the type of the hours worked by the worker that day """

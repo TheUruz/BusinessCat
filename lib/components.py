@@ -2149,7 +2149,7 @@ class Billing_Window(Custom_Toplevel):
 
     def __init_BillingManager(self):
 
-        self.Biller = appLib.BillingManager(month=int(self.choosen_month.get()), year=int(self.choosen_year.get()))
+        self.Biller = appLib.BillingManager(month=self.choosen_month.get(), year=self.choosen_year.get())
         self.Biller.set_badges_path(self.choosen_badge_var.get())
 
 
@@ -2165,14 +2165,15 @@ class Billing_Window(Custom_Toplevel):
                 return
 
         # clear previous view and resize
-        anno = self.choosen_year.get()
-        mese = self.choosen_month.get()
         self.__clear_view()
         self.geometry(f"{second_view_width}x{second_view_height}+{500}+{50}")
 
+        self.__init_BillingManager()
+        total_content = self.Biller.parse_badges()
 
-        print("anno >> ", anno, "mese >>", mese)
-        #self.__init_BillingManager()
+        # TOP_MASTER_FRAME
+        self.TOP_MASTER_FRAME = Frame(self, bg=appLib.color_orange)
+        self.TOP_MASTER_FRAME.pack(anchor="center", padx=self.margin, pady=self.margin, fill="both")
 
     def __first_view(self):
         self.months_checkup = {
@@ -2262,7 +2263,7 @@ class Billing_Window(Custom_Toplevel):
 
         self.year_combobox_var = StringVar()
         self.choosen_year = IntVar()
-        self.year_combobox = ttk.Combobox(self.YEAR_FRAME, state="disabled", width=30)
+        self.year_combobox = ttk.Combobox(self.YEAR_FRAME, state="disabled", textvariable=self.year_combobox_var, width=30)
         self.year_combobox['values'] = [(datetime.datetime.now().year)+x for x in range(5)]
         self.year_combobox.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="nsew")
         self.year_combobox.bind("<<ComboboxSelected>>", lambda e: self.__set_year())
