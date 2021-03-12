@@ -6,6 +6,7 @@ import uuid
 import json
 import shutil
 import datetime
+import calendar
 import fitz
 import pandas as pd
 from pandastable import Table, TableModel, config as tab_config
@@ -2109,10 +2110,18 @@ class Billing_Window(Custom_Toplevel):
 
         #display first view
         self.__first_view()
-        self.__second_view()
 
 
     """ PRIVATE METHODS """
+
+    def __clear_view(self, widget=None):
+
+        if not widget:
+            for child in self.winfo_children():
+                child.pack_forget()
+        else:
+            for child in widget.winfo_children():
+                child.pack_forget()
 
     # first_view
     def __set_badges(self):
@@ -2146,30 +2155,142 @@ class Billing_Window(Custom_Toplevel):
             except:
                 widget.configure(state="normal")
 
-    def __clear_view(self):
-        for child in self.winfo_children():
-            child.pack_forget()
-
     # second_view
     def __init_BillingManager(self):
 
         self.Biller = appLib.BillingManager(month=self.choosen_month.get(), year=self.choosen_year.get())
         self.Biller.set_badges_path(self.choosen_badge_var.get())
 
-    def __set_select_all(self):
+    def __select_all(self):
         if self.SELECT_ALL_CHKBOX_var.get() == True:
             self.SELECT_ALL_CHKBOX_var.set(1)
+            for widget in self.NAMES_FRAME.winfo_children():
+                if isinstance(widget, Checkbutton):
+                    widget.setvar(widget.cget("variable"), True)
         elif self.SELECT_ALL_CHKBOX_var.get() == False:
             self.SELECT_ALL_CHKBOX_var.set(0)
+            for widget in self.NAMES_FRAME.winfo_children():
+                if isinstance(widget, Checkbutton):
+                    widget.setvar(widget.cget("variable"), False)
 
-        check_status = self.SELECT_ALL_CHKBOX.get()   ############ TROVARE UN MODO DI LEGGERE LE VARIE CHECKBOX <<<
-        print(type(check_status), check_status)
+    def __get_selected_workers(self):
+        """ sets a dict of filter workers (only selected workers are used as dict keys)"""
+        self.SELECTED_NAMES = []
+        all_names = self.NAMES_FRAME.winfo_children()
+        for index, widget in enumerate(all_names):
+            if isinstance(widget, Checkbutton):
+                if bool(int(widget.getvar(widget.cget("variable")))):
+                    self.SELECTED_NAMES.append(all_names[index].cget("text"))
+
+    # third_view
+    def __create_billing_data(self):
+        """
+        upon selecting workers from previous view create three dict containing
+        1. worker_name (key) : hours (value)
+        2. worker_name (key) : jobs (value)
+        3. worker_name (key) : billing_profiles (value)
+
+        every value is a dict using days of the choosen month as keys and a variable value in this form
+        1. a dict containing hour types during that day
+        2. a string containing the id of the job done that day
+        3. a string containig the id of the billing_profile to use for that day
+        """
+
+        # get total_content
+        self.TOTAL_CONTENT = self.Biller.parse_badges(names=self.SELECTED_NAMES)
+
+        self.WORKER_HOURS = self.Biller.parse_days(self.TOTAL_CONTENT)
+        #days = {k: "" for k in range(calendar.monthrange(self.choosen_year.get(), self.choosen_month.get())[1])}
+        days = {k:"" for k in list(self.WORKER_HOURS.items())[0][1]} # get empty days string in month from the first worker
+        self.WORKER_JOBS = {worker: days for worker in self.WORKER_HOURS}
+        self.WORKER_BILLING_PROFILES = {worker: days for worker in self.WORKER_HOURS}
+
+
+
+    # views
+    def __third_view(self):
+
+        continue_process = messagebox.askokcancel("", "Una volta confermati i lavoratori non è più possibile tornare indietro, si desidera continuare?")
+        if not continue_process:
+            return
+
+        default_padx = 5
+        default_pady = 5
+
+        # filter selected workers and clear view
+        self.__get_selected_workers()
+        self.__create_billing_data()
+        self.__clear_view(self.TOP_MASTER_FRAME)
+
+        self.DISPLAYED_WORKER = IntVar()
+        self.DISPLAYED_WORKER.set(0)
+
+        # INFO FRAME
+        self.INFO_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_orange)
+        self.INFO_FRAME.pack(anchor="center", padx=default_padx, pady=default_pady, fill="both")
+        self.INFO_LBL = Label(self.INFO_FRAME, text=f"""LAVORATORE:\t{self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]}""", font=("Calibri", 14, "bold"), bg=appLib.color_light_orange)
+        self.INFO_LBL.pack(anchor="center", fill="x", padx=default_padx, pady=(default_pady, 50))
+        instruction_lbl = Label(self.INFO_FRAME,text="Indica la mansione che ho svolto nei giorni in cui ho lavorato",font=("Calibri", 14, "bold"), bg=appLib.color_orange, fg=appLib.color_light_orange)
+        instruction_lbl.pack(fill="x", padx=default_padx, pady=default_pady * 2)
+
+        # OPTIONS FRAME
+        self.OPTIONS_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_light_orange)
+        self.OPTIONS_FRAME.pack(anchor="center", padx=default_padx, pady=default_pady, fill="both")
+        set_all_lbl = Label(self.OPTIONS_FRAME, text="Mansione", font=("Calibri", 10), bg=appLib.color_light_orange).grid(row=0, column=0)
+        self.SET_ALL_JOBS_CMBOX_var = StringVar()
+        self.WEEKENDS_CHECK_var = BooleanVar()
+        set_all_cmbox = ttk.Combobox(self.OPTIONS_FRAME, state="readonly", textvariable=self.SET_ALL_JOBS_CMBOX_var, values=self.Biller.jobs_namelist)
+        set_all_cmbox.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="ew")
+        weekend_check = Checkbutton(self.OPTIONS_FRAME, text="Sab/Dom", font=("Calibri", 10), variable=self.WEEKENDS_CHECK_var, bg=appLib.color_light_orange)
+        weekend_check.grid(row=0, column=2, padx=default_padx, pady=default_pady)
+        assign_btn = Button(self.OPTIONS_FRAME, text="Assegna a tutti i giorni").grid(row=0, column=3, padx=default_padx, pady=default_pady)
+        self.OPTIONS_FRAME.grid_columnconfigure(1, weight=1)
+
+
+        # DAYS FRAME
+        self.DAYS_FRAME_MASTER = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_light_orange)
+        self.DAYS_FRAME_MASTER.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
+        self.DAYS_FRAME_MASTER.pack_propagate(0)
+        self.DAYS_CANVAS = Canvas(self.DAYS_FRAME_MASTER, bg=appLib.color_light_orange)
+        self.DAYS_CANVAS.pack(side="left", fill="both", expand=True)
+        self.DAYS_FRAME = Frame(self.DAYS_CANVAS, bg=appLib.color_light_orange)
+        self.DAYS_FRAME.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
+        self.DAYS_YSCROLL = Scrollbar(self.DAYS_FRAME_MASTER, orient="vertical", command=self.DAYS_CANVAS.yview)
+        self.DAYS_YSCROLL.pack(side="right", fill="y", expand=False)
+        self.DAYS_CANVAS.configure(yscrollcommand=self.DAYS_YSCROLL.set)
+
+        self.DAYS_CANVAS.create_window((0, 0), window=self.DAYS_FRAME, anchor="nw")
+        self.DAYS_CANVAS.bind("<Configure>", lambda e: self.DAYS_CANVAS.configure(scrollregion=self.DAYS_CANVAS.bbox("all")))
+
+        # putting days in frame
+        for day in self.TOTAL_CONTENT[self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]].keys():
+            day_frame = Frame(self.DAYS_FRAME, bg=appLib.color_light_orange)
+            day_frame.pack(anchor="center")
+            Label(day_frame, text=day, bg=appLib.color_light_orange).grid(row=0, column=0, sticky="nsew", padx=default_padx*2, pady=default_pady*2)
+            ttk.Combobox(day_frame, state="readonly", width=20, values=self.Biller.jobs_namelist).grid(row=0, column=1, sticky="nsew", padx=default_padx*2, pady=default_pady*2)
+            for col in range(day_frame.grid_size()[0]):
+                if col == 0:
+                    day_frame.grid_columnconfigure(col, minsize=100)
+                else:
+                    day_frame.grid_columnconfigure(col, minsize=350)
+
+
+        # NAVBAR
+        self.NAVBAR_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_orange)
+        self.NAVBAR_FRAME.pack(side="top", pady=(default_pady*2, default_pady*4), padx=default_padx, fill="both")
+        self.CONTINUE_BTN = Button(self.NAVBAR_FRAME, width=20, height=2, text="CONFERMA E PROCEDI")
+        self.CONTINUE_BTN.grid(row=0, column=0, padx=(20,0), sticky="w")
+        self.PREVIOUS_WORKER_BTN = Button(self.NAVBAR_FRAME, text="<<", height=2, width=4, bg=appLib.default_background)
+        self.PREVIOUS_WORKER_BTN.grid(row=0, column=2, padx=(0,100), sticky="e")
+        self.NEXT_WORKER_BTN = Button(self.NAVBAR_FRAME, text=">>", height=2, width=4, bg=appLib.default_background)
+        self.NEXT_WORKER_BTN.grid(row=0, column=2, padx=(0,20), sticky="e")
+        for col in range(self.NAVBAR_FRAME.grid_size()[0]):
+            self.NAVBAR_FRAME.grid_columnconfigure(col, weight=1)
 
     def __second_view(self):
 
-        second_view_width = 650
-        second_view_height = 700
-
+        view_width = 650
+        view_height = 700
         default_padx = 5
         default_pady = 5
 
@@ -2181,10 +2302,9 @@ class Billing_Window(Custom_Toplevel):
 
         # clear previous view and resize
         self.__clear_view()
-        self.geometry(f"{second_view_width}x{second_view_height}+{500}+{50}")
+        self.geometry(f"{view_width}x{view_height}+{500}+{50}")
 
-        #self.__init_BillingManager()
-        #total_content = self.Biller.parse_badges()
+        self.__init_BillingManager()
 
         # TOP_MASTER_FRAME
         self.TOP_MASTER_FRAME = Frame(self, bg=appLib.color_orange)
@@ -2203,26 +2323,34 @@ class Billing_Window(Custom_Toplevel):
 
         # SELECT ALL
         self.SELECT_ALL_CHKBOX_var = BooleanVar()
-        self.SELECT_ALL_CHKBOX = Checkbutton(self.INFO_FRAME, text="Seleziona tutti", var=self.SELECT_ALL_CHKBOX_var, font=("Calibri", 12, "bold"), bg=appLib.color_orange, command=self.__set_select_all)
+        self.SELECT_ALL_CHKBOX = Checkbutton(self.INFO_FRAME, text="Seleziona tutti", var=self.SELECT_ALL_CHKBOX_var, font=("Calibri", 12, "bold"), bg=appLib.color_orange, command=self.__select_all)
         self.SELECT_ALL_CHKBOX.pack(anchor="center", padx=default_padx)
 
-        test = ["GOMEZ ADAMS", "RICK SANCHEZ", "APOLLO CREED"]
-
         # NAMES FRAME
-        self.NAMES_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_light_orange)
+        self.NAMES_FRAME_MASTER = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_light_orange)
+        self.NAMES_FRAME_MASTER.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
+        self.NAMES_FRAME_MASTER.pack_propagate(0)
+        self.NAMES_CANVAS = Canvas(self.NAMES_FRAME_MASTER, bg=appLib.color_light_orange)
+        self.NAMES_CANVAS.pack(side="left", fill="both", expand=True)
+        self.NAMES_FRAME = Frame(self.NAMES_CANVAS, bg=appLib.color_light_orange)
         self.NAMES_FRAME.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
-        self.NAMES_FRAME.pack_propagate(0)
+
+        self.NAMES_YSCROLL = Scrollbar(self.NAMES_FRAME_MASTER, orient="vertical", command=self.NAMES_CANVAS.yview)
+        self.NAMES_YSCROLL.pack(side="right", fill="y", expand=False)
+        self.NAMES_CANVAS.configure(yscrollcommand=self.NAMES_YSCROLL.set)
+
+        self.NAMES_CANVAS.create_window((0, 0), window=self.NAMES_FRAME, anchor="nw")
+        self.NAMES_CANVAS.bind("<Configure>", lambda e: self.NAMES_CANVAS.configure(scrollregion=self.NAMES_CANVAS.bbox("all")))
 
         # putting names in frame
-        for n in test:
-            name_checkbtn = Checkbutton(self.NAMES_FRAME, text=n, font=("Calibri", 12), bg=appLib.color_light_orange)
+        names = self.Biller.get_all_badges_names()
+        for worker in names:
+            name_checkbtn = Checkbutton(self.NAMES_FRAME, text=worker, font=("Calibri", 12), bg=appLib.color_light_orange)
             name_checkbtn.pack(anchor="w", pady=default_pady, padx=default_padx)
 
         # CONTINUE BUTTON
-        self.CONTINUE_BTN = Button(self.TOP_MASTER_FRAME, width=30, text="CONFERMA E PROCEDI")
+        self.CONTINUE_BTN = Button(self.TOP_MASTER_FRAME, width=30, text="CONFERMA E PROCEDI", command=self.__third_view)
         self.CONTINUE_BTN.pack(anchor="center", pady=(0,default_pady*2))
-
-
 
     def __first_view(self):
         self.months_checkup = {

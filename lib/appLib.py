@@ -928,6 +928,7 @@ class BillingManager():
         self.billing_schema = None
         self.total_content = None
 
+
         # config paths
         #self.__bills_path = "../config_files/BusinessCat billing/bills.json"
         self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
@@ -973,6 +974,7 @@ class BillingManager():
         """ read and load current billing_profiles file """
         with open(self.__jobs_path,"r") as f:
             self.jobs = json.load(f)
+            self.jobs_namelist = sorted([job["name"] for job in self.jobs])
         print("** jobs caricati")
 
     def __load_Excel_badges(self):
@@ -1078,21 +1080,35 @@ class BillingManager():
         self.billing_month = int(month)
         self._holidays = holidays.IT(years=[self.billing_year, self.billing_year - 1])
 
-    def parse_badges(self):
+    def get_all_badges_names(self):
+        """ return an array of all names found in excel file """
+        xlsx_data, sheet_names, engine = self.__load_Excel_badges()
+        names = []
+        for sheetNo, sheet in enumerate(sheet_names):
+            sheet_data = xlsx_data[sheet] if engine == "openpyxl" else xlsx_data.get_sheet(sheetNo)
+            names.append(self.__get_badge_name(sheet_data))
+        return names
+
+    def parse_badges(self, names=[]):
         """
         read and fix the badges form, adjusting column names and preparing data to be read by other methods.
         returning a dict containing every worker as key and a subdict containing every of its workday as value
         """
         xlsx_data, sheet_names, engine = self.__load_Excel_badges()
         total_content = {}
-        for sheetNo, sheet in enumerate(sheet_names):
-            # getting df, fixing columns, removing empty columns
-            df = pd.read_excel(xlsx_data, sheet_name=sheet, header=9, index_col=0, engine=engine)
 
-            # get badge name
+        for sheetNo, sheet in enumerate(sheet_names):
             sheet_data = xlsx_data[sheet] if engine == "openpyxl" else xlsx_data.get_sheet(sheetNo)
             badge_name = self.__get_badge_name(sheet_data)
+
+            if names:
+                if not badge_name in names:
+                    continue
+
             total_content[badge_name] = {}
+
+            # getting df, fixing columns, removing empty columns
+            df = pd.read_excel(xlsx_data, sheet_name=sheet, header=9, index_col=0, engine=engine)
 
             # set columns
             df = self.__manage_columns(df)
@@ -1151,10 +1167,79 @@ class BillingManager():
         self.total_content = total_content
         return total_content
 
+    def parse_days(self, total_content):
+        """ Pointing out what is the type of the hours worked by the worker that day """
+
+        to_return = {}
+        for worker in total_content:
+            to_return[worker] = {}
+            for day in total_content[worker]:
+                day_content = total_content[worker][day]
+                parsed_day = {
+                    "OR": 0.0,  # ordinarie
+                    "ST": 0.0,  # straordinarie
+                    "MN": 0.0,  # maggiorazione notturna
+                    "OF": 0.0,  # ordinario festivo
+                    "SF": 0.0,  # straordinario festivo
+                    "SN": 0.0,  # straordinario notturno
+                    "FN": 0.0  # festivo notturno
+                }
+
+                # se non ci sono ore ordinarie o straordinarie return empty day
+                if not any(day_content["GIOR PROG"]) and not any(day_content["GIOR PROG..1"]):
+                    to_return[worker][day] = parsed_day
+                    continue
+
+                # setting starting ordinary and overtime values
+                if day_content["GIOR PROG"][0]:
+                    val = day_content["GIOR PROG"][0] if len(day_content["GIOR PROG"][0]) >= 4 else "0" + day_content["GIOR PROG"][0]
+                    if "." in val:
+                        val = val.split(".")[0] + "." + self.__minutes_to_int(val.split(".")[1])
+                    parsed_day["OR"] += float(val)
+                if day_content["GIOR PROG..1"][0]:
+                    val = day_content["GIOR PROG..1"][0] if len(day_content["GIOR PROG..1"][0]) >= 4 else "0" + day_content["GIOR PROG..1"][0]
+                    if "." in val:
+                        val = val.split(".")[0] + "." + self.__minutes_to_int(val.split(".")[1])
+                    parsed_day["ST"] += float(val)
+
+                # check every COD key for special hours
+                for key in day_content:
+                    if key.startswith("COD") and any(day_content[key]):
+
+                        # night shifts
+                        if day_content[key][0] == "MN":
+                            hours = day_content[key][1] if len(day_content[key][1]) >= 4 else "0" + day_content[key][1]
+                            if "." in hours:
+                                hours = hours.split(".")[0] + "." + self.__minutes_to_int(hours.split(".")[1])
+                            hours = float(hours)
+                            parsed_day["OR"] -= hours
+                            parsed_day["MN"] += hours
+
+                        # overtime night shifts
+                        elif day_content[key][0] == "SN":
+                            hours = day_content[key][1] if len(day_content[key][1]) >= 4 else "0" + day_content[key][1]
+                            if "." in hours:
+                                hours = hours.split(".")[0] + "." + self.__minutes_to_int(hours.split(".")[1])
+                            hours = float(hours)
+                            parsed_day["ST"] -= hours
+                            parsed_day["SN"] += hours
+
+                # if day is holiday decrement ordinary to increase holiday values
+                check_day = f"{self.billing_month}/{day[:-1]}/{self.billing_year}"
+                if check_day in self._holidays:
+                    parsed_day["OF"] += parsed_day["OR"]
+                    parsed_day["OR"] -= parsed_day["OR"]
+                    parsed_day["SF"] += parsed_day["ST"]
+                    parsed_day["ST"] -= parsed_day["ST"]
+                    parsed_day["FN"] += parsed_day["MN"]
+                    parsed_day["MN"] -= parsed_day["MN"]
+
+                to_return[worker][day] = parsed_day
+        return to_return
 
 
 
-    def parse_day(self,day, day_content):
+    def old_parse_day(self,day, day_content):
         """ Pointing out what is the type of the hours worked by the worker that day """
         parsed_day = {
             "OR": 0.0,  # ordinarie
