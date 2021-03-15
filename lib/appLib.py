@@ -966,12 +966,26 @@ class BillingManager():
 
     def __load_billing_profiles(self):
         """ read and load current billing_profiles file """
+
+        # create empty file if not existing
+        if not os.path.exists(self.__billing_profiles_path):
+            init_data = []
+            with open(self.__billing_profiles_path, "w") as f:
+                f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
+
         with open(self.__billing_profiles_path,"r") as f:
             self.billing_profiles = json.load(f)
         print("** billing_profiles caricati")
 
     def __load_jobs(self):
         """ read and load current billing_profiles file """
+
+        # create empty file if not existing
+        if not os.path.exists(self.__jobs_path):
+            init_data = []
+            with open(self.__jobs_path, "w") as f:
+                f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
+
         with open(self.__jobs_path,"r") as f:
             self.jobs = json.load(f)
             self.jobs_namelist = sorted([job["name"] for job in self.jobs])
