@@ -2119,9 +2119,11 @@ class Billing_Window(Custom_Toplevel):
         if not widget:
             for child in self.winfo_children():
                 child.pack_forget()
+                child.grid_forget()
         else:
             for child in widget.winfo_children():
                 child.pack_forget()
+                child.grid_forget()
 
     # first_view
     def __set_badges(self):
@@ -2205,6 +2207,130 @@ class Billing_Window(Custom_Toplevel):
         self.WORKER_JOBS = {worker: days for worker in self.WORKER_HOURS}
         self.WORKER_BILLING_PROFILES = {worker: days for worker in self.WORKER_HOURS}
 
+    def __display_worker(self):
+        try:
+            self.DAYS_CANVAS.destroy()
+        except:
+            pass
+        self.DAYS_CANVAS = Canvas(self.DAYS_FRAME_MASTER, bg=appLib.color_light_orange)
+        self.DAYS_CANVAS.pack(side="left", fill="both", expand=True)
+        self.DAYS_FRAME = Frame(self.DAYS_CANVAS, bg=appLib.color_light_orange)
+        self.DAYS_FRAME.pack(anchor="center", padx=10, pady=10, fill="both", expand=True)
+        self.DAYS_YSCROLL = Scrollbar(self.DAYS_FRAME_MASTER, orient="vertical", command=self.DAYS_CANVAS.yview)
+        self.DAYS_YSCROLL.pack(side="right", fill="y", expand=False)
+        self.DAYS_CANVAS.configure(yscrollcommand=self.DAYS_YSCROLL.set)
+
+        self.DAYS_CANVAS.create_window((0, 0), window=self.DAYS_FRAME, anchor="nw")
+        self.DAYS_CANVAS.bind("<Configure>", lambda e: self.DAYS_CANVAS.configure(scrollregion=self.DAYS_CANVAS.bbox("all")))
+
+        # putting days in frame
+        for day in self.WORKER_JOBS[self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]].keys():
+            day_frame = Frame(self.DAYS_FRAME, bg=appLib.color_light_orange)
+            day_frame.pack(anchor="center")
+            Label(day_frame, text=day, bg=appLib.color_light_orange).grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+
+            job_name = self.Biller.get_jobname(self.WORKER_JOBS[self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]][day])
+            cmb = ttk.Combobox(day_frame, state="readonly", width=20, values=self.Biller.jobs_namelist)
+            cmb.set(job_name)
+            cmb.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+            for col in range(day_frame.grid_size()[0]):
+                if col == 0:
+                    day_frame.grid_columnconfigure(col, minsize=100)
+                else:
+                    day_frame.grid_columnconfigure(col, minsize=350)
+
+        # reset widgets
+        self.INFO_LBL.configure(text=f"""LAVORATORE:\t{self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]}""")
+        self.SET_ALL_JOBS_CMBOX_var.set("")
+        self.WEEKENDS_CHECK_var.set(False)
+
+    def __parse_data(self):
+        cached_keys = {}
+        w_data = {}
+        for elem in self.DAYS_FRAME.winfo_children():
+            key = ""
+            value= ""
+            if isinstance(elem, Frame):
+                for widget in elem.winfo_children():
+                    if isinstance(widget, Label):
+                        key = widget.cget("text")
+                        if not key:
+                            raise Exception("ERROR: Cannot find key in worker days!")
+                    if isinstance(widget, ttk.Combobox):
+                        value_ = widget.get()
+                        if value_:
+                            if value_ not in cached_keys:
+                                for job in self.Biller.jobs:
+                                    if str(job["name"]) == value_:
+                                        cached_keys[value_] = job["id"]
+                            try:
+                                value = cached_keys[value_]
+                            except:
+                                raise Exception(f"ERRORE: {value_} non presente tra i Jobs")
+            w_data[key] = value
+        return w_data
+
+    def __save_data(self):
+        # gather data and save it to this worker
+        new_data = self.__parse_data()
+        w = list(self.WORKER_JOBS.keys())[self.DISPLAYED_WORKER.get()]
+        self.WORKER_JOBS[w] = new_data
+
+    def __next_worker(self):
+        self.__save_data()
+
+        current = int(self.DISPLAYED_WORKER.get())
+        all_workers_len = len(self.TOTAL_CONTENT)-1
+        if current < all_workers_len:
+            next_w = current+1
+        else:
+            next_w = 0
+
+        # reset view
+        self.__clear_view(widget=self.DAYS_FRAME_MASTER)
+
+        self.DISPLAYED_WORKER.set(next_w)
+        self.__display_worker()
+
+    def __previous_worker(self):
+        self.__save_data()
+
+        current = int(self.DISPLAYED_WORKER.get())
+        all_workers_len = len(self.TOTAL_CONTENT)-1
+        if current > 0:
+            prev_w = current - 1
+        else:
+            prev_w = all_workers_len
+
+        self.DISPLAYED_WORKER.set(prev_w)
+        self.__display_worker()
+
+    def __assign_all_jobs(self):
+
+        job_to_set = self.SET_ALL_JOBS_CMBOX_var.get()
+        also_weekend = self.WEEKENDS_CHECK_var.get()
+
+        for elem in self.DAYS_FRAME.winfo_children():
+            if isinstance(elem, Frame):
+                ignore = False
+                for widget in elem.winfo_children():
+
+                    if isinstance(widget, Label):
+                        key = widget.cget("text")
+                        if not key:
+                            raise Exception("ERROR: Cannot find key in worker days!")
+                        current_day = int(key[:-1])
+                        wd = datetime.datetime.strptime(f"{current_day}-{self.choosen_month.get()}-{self.choosen_year.get()}", "%d-%m-%Y").weekday()
+                        if wd in [5,6] and not also_weekend:
+                            ignore = True
+
+                    if isinstance(widget, ttk.Combobox) and not ignore:
+                        widget.set(job_to_set)
+
+    def __confirm_and_bill(self):
+        self.__save_data()
+        for w in self.WORKER_JOBS:
+            print(w, self.WORKER_JOBS[w])
 
 
     # views
@@ -2243,46 +2369,25 @@ class Billing_Window(Custom_Toplevel):
         set_all_cmbox.grid(row=0, column=1, padx=default_padx, pady=default_pady, sticky="ew")
         weekend_check = Checkbutton(self.OPTIONS_FRAME, text="Sab/Dom", font=("Calibri", 10), variable=self.WEEKENDS_CHECK_var, bg=appLib.color_light_orange)
         weekend_check.grid(row=0, column=2, padx=default_padx, pady=default_pady)
-        assign_btn = Button(self.OPTIONS_FRAME, text="Assegna a tutti i giorni").grid(row=0, column=3, padx=default_padx, pady=default_pady)
+        assign_btn = Button(self.OPTIONS_FRAME, text="Assegna a tutti i giorni", command=self.__assign_all_jobs).grid(row=0, column=3, padx=default_padx, pady=default_pady)
         self.OPTIONS_FRAME.grid_columnconfigure(1, weight=1)
-
 
         # DAYS FRAME
         self.DAYS_FRAME_MASTER = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_light_orange)
-        self.DAYS_FRAME_MASTER.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
+        self.DAYS_FRAME_MASTER.pack(anchor="center", padx=10, pady=10, fill="both", expand=True)
         self.DAYS_FRAME_MASTER.pack_propagate(0)
-        self.DAYS_CANVAS = Canvas(self.DAYS_FRAME_MASTER, bg=appLib.color_light_orange)
-        self.DAYS_CANVAS.pack(side="left", fill="both", expand=True)
-        self.DAYS_FRAME = Frame(self.DAYS_CANVAS, bg=appLib.color_light_orange)
-        self.DAYS_FRAME.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
-        self.DAYS_YSCROLL = Scrollbar(self.DAYS_FRAME_MASTER, orient="vertical", command=self.DAYS_CANVAS.yview)
-        self.DAYS_YSCROLL.pack(side="right", fill="y", expand=False)
-        self.DAYS_CANVAS.configure(yscrollcommand=self.DAYS_YSCROLL.set)
 
-        self.DAYS_CANVAS.create_window((0, 0), window=self.DAYS_FRAME, anchor="nw")
-        self.DAYS_CANVAS.bind("<Configure>", lambda e: self.DAYS_CANVAS.configure(scrollregion=self.DAYS_CANVAS.bbox("all")))
-
-        # putting days in frame
-        for day in self.TOTAL_CONTENT[self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]].keys():
-            day_frame = Frame(self.DAYS_FRAME, bg=appLib.color_light_orange)
-            day_frame.pack(anchor="center")
-            Label(day_frame, text=day, bg=appLib.color_light_orange).grid(row=0, column=0, sticky="nsew", padx=default_padx*2, pady=default_pady*2)
-            ttk.Combobox(day_frame, state="readonly", width=20, values=self.Biller.jobs_namelist).grid(row=0, column=1, sticky="nsew", padx=default_padx*2, pady=default_pady*2)
-            for col in range(day_frame.grid_size()[0]):
-                if col == 0:
-                    day_frame.grid_columnconfigure(col, minsize=100)
-                else:
-                    day_frame.grid_columnconfigure(col, minsize=350)
-
+        # display current worker
+        self.__display_worker()
 
         # NAVBAR
         self.NAVBAR_FRAME = Frame(self.TOP_MASTER_FRAME, bg=appLib.color_orange)
         self.NAVBAR_FRAME.pack(side="top", pady=(default_pady*2, default_pady*4), padx=default_padx, fill="both")
-        self.CONTINUE_BTN = Button(self.NAVBAR_FRAME, width=20, height=2, text="CONFERMA E PROCEDI")
+        self.CONTINUE_BTN = Button(self.NAVBAR_FRAME, width=20, height=2, text="CONFERMA E PROCEDI", command=self.__confirm_and_bill)
         self.CONTINUE_BTN.grid(row=0, column=0, padx=(20,0), sticky="w")
-        self.PREVIOUS_WORKER_BTN = Button(self.NAVBAR_FRAME, text="<<", height=2, width=4, bg=appLib.default_background)
+        self.PREVIOUS_WORKER_BTN = Button(self.NAVBAR_FRAME, text="<<", height=2, width=4, bg=appLib.default_background, command=self.__previous_worker)
         self.PREVIOUS_WORKER_BTN.grid(row=0, column=2, padx=(0,100), sticky="e")
-        self.NEXT_WORKER_BTN = Button(self.NAVBAR_FRAME, text=">>", height=2, width=4, bg=appLib.default_background)
+        self.NEXT_WORKER_BTN = Button(self.NAVBAR_FRAME, text=">>", height=2, width=4, bg=appLib.default_background, command=self.__next_worker)
         self.NEXT_WORKER_BTN.grid(row=0, column=2, padx=(0,20), sticky="e")
         for col in range(self.NAVBAR_FRAME.grid_size()[0]):
             self.NAVBAR_FRAME.grid_columnconfigure(col, weight=1)
@@ -2470,6 +2575,7 @@ if __name__ == "__main__":
     root.using_db = False
 
     # app entry point
-    app = Billing_Window(root)
+    app = Home_Window(root)
+    #app = Billing_Window(root)
 
     app.mainloop()

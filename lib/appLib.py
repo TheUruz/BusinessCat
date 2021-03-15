@@ -975,6 +975,7 @@ class BillingManager():
         with open(self.__jobs_path,"r") as f:
             self.jobs = json.load(f)
             self.jobs_namelist = sorted([job["name"] for job in self.jobs])
+            self.jobs_namelist.insert(0,"")
         print("** jobs caricati")
 
     def __load_Excel_badges(self):
@@ -1066,7 +1067,6 @@ class BillingManager():
                 new_name += (old_name[index][0].upper() + old_name[index][1:].lower())
 
         return new_name
-
 
     """    PUBLIC METHODS    """
     def set_badges_path(self, badges_path):
@@ -1225,18 +1225,36 @@ class BillingManager():
                             parsed_day["SN"] += hours
 
                 # if day is holiday decrement ordinary to increase holiday values
-                check_day = f"{self.billing_month}/{day[:-1]}/{self.billing_year}"
-                if check_day in self._holidays:
-                    parsed_day["OF"] += parsed_day["OR"]
-                    parsed_day["OR"] -= parsed_day["OR"]
-                    parsed_day["SF"] += parsed_day["ST"]
-                    parsed_day["ST"] -= parsed_day["ST"]
-                    parsed_day["FN"] += parsed_day["MN"]
-                    parsed_day["MN"] -= parsed_day["MN"]
+                try:
+                    check_day = f"{self.billing_month}/{day[:-1]}/{self.billing_year}"
+                    if check_day in self._holidays:
+                        parsed_day["OF"] += parsed_day["OR"]
+                        parsed_day["OR"] -= parsed_day["OR"]
+                        parsed_day["SF"] += parsed_day["ST"]
+                        parsed_day["ST"] -= parsed_day["ST"]
+                        parsed_day["FN"] += parsed_day["MN"]
+                        parsed_day["MN"] -= parsed_day["MN"]
+                except ValueError as e:
+                    if str(e).startswith("Cannot parse date from string '2/29/"):
+                        raise ValueError(f"ERRORE: {worker} ha lavorato il giorno 29 Febbraio di un anno non bisestile!")
 
                 to_return[worker][day] = parsed_day
         return to_return
 
+    def get_jobname(self, job_id):
+        """ given id, gets job name """
+        name = ""
+        for job in self.jobs:
+            if job["id"] == job_id:
+                name = job["name"]
+                break
+        if not name and job_id:
+            name = f"Job {job_id} non trovato"
+        return name
+
+    def get_billingprofile(self, job_id):
+        """ return billing profile id of given job id """
+        pass
 
 
     def old_parse_day(self,day, day_content):
