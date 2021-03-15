@@ -915,8 +915,8 @@ class PaycheckController():
         return problems
 
 class BillingManager():
-    def __init__(self, month=datetime.datetime.now().month, year=datetime.datetime.now().year):
-        self.bill_name = "Fattura di prova.xlsx"
+    def __init__(self, bill_name, month=datetime.datetime.now().month, year=datetime.datetime.now().year):
+        self.bill_name = f"{bill_name}.xlsx"
         self.badges_path = None #badges_path
         self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
         self.name_cell = "B5" # in che cella del badge_path si trova il nome
@@ -1067,6 +1067,69 @@ class BillingManager():
                 new_name += (old_name[index][0].upper() + old_name[index][1:].lower())
 
         return new_name
+
+    def __apply_billing_profile(self, hours_to_bill, billing_profile):
+        """
+        steps: 1. adding time, 2. apply pattern, 3. apply pricing
+        """
+        priced_hours = {}
+
+        # check integrity and get tag to focus
+        if hours_to_bill["OR"] and hours_to_bill["OF"]:
+            raise ValueError("ERROR: there are both ordinary and holiday hours on a single day")
+        else:
+            if hours_to_bill["OF"]:
+                tag = "OF"
+            elif hours_to_bill["OR"]:
+                tag = "OR"
+            else:
+                tag = None
+
+        # adding time
+        if tag:
+            if billing_profile["time_to_add"] and hours_to_bill[tag]:
+                if billing_profile["add_over_threshold"]:
+                    if hours_to_bill[tag] >= billing_profile["threshold_hour"]:
+                        hours_to_bill[tag] += billing_profile["time_to_add"]
+                else:
+                    hours_to_bill[tag] += billing_profile["time_to_add"]
+
+            # apply pattern
+            if billing_profile["pattern"] and hours_to_bill[tag]:
+                new_amount = 0.0
+                start_val = copy.deepcopy(hours_to_bill[tag])
+                for i in range(len(billing_profile["pattern"])):
+                    operation = billing_profile["pattern"][i]["perform"].strip()
+                    amount = billing_profile["pattern"][i]["amount"]
+                    if operation == "/":
+                        start_val /= amount
+                    elif operation =="-":
+                        start_val -= amount
+                    elif operation == "+":
+                        start_val += amount
+                    elif operation =="*":
+                        start_val *= amount
+                    else:
+                        raise Exception("ERROR: invalid operator in pattern. operator must be one of + - * /")
+                    if billing_profile["pattern"][i]["keep"]:
+                        new_amount += start_val
+                hours_to_bill[tag] = new_amount
+
+        # apply pricing
+        try:
+            if billing_profile["pricelist"]:
+                for hour_type in hours_to_bill:
+                    for p in billing_profile["pricelist"]:
+                        if hour_type == p["tag"]:
+                            priced_hours[hour_type] = hours_to_bill[hour_type]*p["price"]
+                            priced_hours[hour_type] = self.__round_float(priced_hours[hour_type], decimal_pos=2)
+            else:
+                raise Exception("ERROR: No pricelist specified!")
+        except:
+            print("not found")
+
+        return priced_hours
+
 
     """    PUBLIC METHODS    """
     def set_badges_path(self, badges_path):
@@ -1252,146 +1315,78 @@ class BillingManager():
             name = f"Job {job_id} non trovato"
         return name
 
-    def get_billingprofile(self, job_id):
-        """ return billing profile id of given job id """
-        pass
+    def get_billing_profile_id(self, job_id):
+        """ return billing profile id given job id """
+        billing_profile_id = ""
+        for job in self.jobs:
+            if job["id"] == job_id:
+                billing_profile_id = job["billing_profile_id"]
+                break
+        if not billing_profile_id and job_id:
+            raise Exception(f"Billing Profile for Job {job_id} non trovato")
+        return billing_profile_id
 
-
-    def old_parse_day(self,day, day_content):
-        """ Pointing out what is the type of the hours worked by the worker that day """
-        parsed_day = {
-            "OR": 0.0,  # ordinarie
-            "ST": 0.0,  # straordinarie
-            "MN": 0.0,  # maggiorazione notturna
-            "OF": 0.0,  # ordinario festivo
-            "SF": 0.0,  # straordinario festivo
-            "SN": 0.0,  # straordinario notturno
-            "FN": 0.0  # festivo notturno
-        }
-
-        # se non ci sono ore ordinarie o straordinarie return empty day
-        if not any(day_content["GIOR PROG"]) and not any(day_content["GIOR PROG..1"]):
-            return parsed_day
-
-        # setting starting ordinary and overtime values
-        if day_content["GIOR PROG"][0]:
-            val = day_content["GIOR PROG"][0] if len(day_content["GIOR PROG"][0]) >= 4 else "0" + day_content["GIOR PROG"][0]
-            if "." in val:
-                val = val.split(".")[0] + "." + self.__minutes_to_int(val.split(".")[1])
-            parsed_day["OR"] += float(val)
-        if day_content["GIOR PROG..1"][0]:
-            val = day_content["GIOR PROG..1"][0] if len(day_content["GIOR PROG..1"][0]) >= 4 else "0" + day_content["GIOR PROG..1"][0]
-            if "." in val:
-                val = val.split(".")[0] + "." + self.__minutes_to_int(val.split(".")[1])
-            parsed_day["ST"] += float(val)
-
-        # check every COD key for special hours
-        for key in day_content:
-            if key.startswith("COD") and any(day_content[key]):
-
-                # night shifts
-                if day_content[key][0] == "MN":
-                    hours = day_content[key][1] if len(day_content[key][1]) >= 4 else "0" + day_content[key][1]
-                    if "." in hours:
-                        hours = hours.split(".")[0] + "." + self.__minutes_to_int(hours.split(".")[1])
-                    hours = float(hours)
-                    parsed_day["OR"] -= hours
-                    parsed_day["MN"] += hours
-
-                # overtime night shifts
-                elif day_content[key][0] == "SN":
-                    hours = day_content[key][1] if len(day_content[key][1]) >= 4 else "0" + day_content[key][1]
-                    if "." in hours:
-                        hours = hours.split(".")[0] + "." + self.__minutes_to_int(hours.split(".")[1])
-                    hours = float(hours)
-                    parsed_day["ST"] -= hours
-                    parsed_day["SN"] += hours
-
-        # if day is holiday decrement ordinary to increase holiday values
-        check_day = f"{self.billing_month}/{day[:-1]}/{self.billing_year}"
-        if check_day in self._holidays:
-            parsed_day["OF"] += parsed_day["OR"]
-            parsed_day["OR"] -= parsed_day["OR"]
-            parsed_day["SF"] += parsed_day["ST"]
-            parsed_day["ST"] -= parsed_day["ST"]
-            parsed_day["FN"] += parsed_day["MN"]
-            parsed_day["MN"] -= parsed_day["MN"]
-
-        return parsed_day
-
-    def apply_billing_profile(self, hours_to_bill, billing_profile):
-        """
-        steps: 1. adding time, 2. apply pattern, 3. apply pricing
-        """
-        priced_hours = {}
-
-        # check integrity and get tag to focus
-        if hours_to_bill["OR"] and hours_to_bill["OF"]:
-            raise ValueError("ERROR: there are both ordinary and holiday hours on a single day")
-        else:
-            if hours_to_bill["OF"]:
-                tag = "OF"
-            elif hours_to_bill["OR"]:
-                tag = "OR"
-            else:
-                tag = None
-
-        # adding time
-        if tag:
-            if billing_profile["time_to_add"] and hours_to_bill[tag]:
-                if billing_profile["add_over_threshold"]:
-                    if hours_to_bill[tag] >= billing_profile["threshold_hour"]:
-                        hours_to_bill[tag] += billing_profile["time_to_add"]
+    def parse_jobs_to_profiles(self, workers_jobs):
+        """ creating a dict from parsing every worker day to its billing profile and returning it """
+        workers_billing_profiles = {}
+        for w in workers_jobs:
+            workers_billing_profiles[w] = {}
+            for day in workers_jobs[w]:
+                if not workers_jobs[w][day]:
+                    workers_billing_profiles[w][day] = ""
                 else:
-                    hours_to_bill[tag] += billing_profile["time_to_add"]
+                    workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
+        return workers_billing_profiles
 
-            # apply pattern
-            if billing_profile["pattern"] and hours_to_bill[tag]:
-                new_amount = 0.0
-                start_val = copy.deepcopy(hours_to_bill[tag])
-                for i in range(len(billing_profile["pattern"])):
-                    operation = billing_profile["pattern"][i]["perform"].strip()
-                    amount = billing_profile["pattern"][i]["amount"]
-                    if operation == "/":
-                        start_val /= amount
-                    elif operation =="-":
-                        start_val -= amount
-                    elif operation == "+":
-                        start_val += amount
-                    elif operation =="*":
-                        start_val *= amount
-                    else:
-                        raise Exception("ERROR: invalid operator in pattern. operator must be one of + - * /")
-                    if billing_profile["pattern"][i]["keep"]:
-                        new_amount += start_val
-                hours_to_bill[tag] = new_amount
+    def bill(self, hours, jobs, billing_profiles, dump_values=False, dump_detailed=False):
 
-        # apply pricing
-        if billing_profile["pricelist"]:
-            for hour_type in hours_to_bill:
-                for p in billing_profile["pricelist"]:
-                    if hour_type == p["tag"]:
-                        priced_hours[hour_type] = hours_to_bill[hour_type]*p["price"]
-                        priced_hours[hour_type] = self.__round_float(priced_hours[hour_type], decimal_pos=2)
-        else:
-            raise Exception("ERROR: No pricelist specified!")
+        billed_hours = {}
 
-        return priced_hours
+        # for every worker
+        for w in hours:
+            billed_hours[w] = {}
+            w_hours = hours[w]
+            w_jobs = jobs[w]
+            w_billing_profiles = billing_profiles[w]
 
-    def create_billing_schema(self, total_content, random_=True):
+            # for every day
+            for day in w_hours:
+                day_job = w_jobs[day]
+                day_billing_profile_id = w_billing_profiles[day]
 
-        billing_schema = {}
+                # get profile ojb
+                day_billing_profile = None
+                for p_ in self.billing_profiles:
+                    if p_["id"] == day_billing_profile_id:
+                        day_billing_profile = p_
+                if not day_billing_profile and day_billing_profile_id:
+                    raise Exception(f"ERROR: cannot find billing profile for job {self.get_jobname(day_job)}")
 
-        # assign random billing profile to workers
-        if random_:
-            for worker in total_content:
-                profile = random.choice(list(self.billing_profiles.keys()))
-                billing_schema[worker] = {k:profile for k in total_content[worker]}
-        else:
-            raise Exception("Not implemented yet")
+                # if worker worked that day bill it, else append 0 values
+                if day_job:
+                    billed_hours[w][day] = self.__apply_billing_profile(w_hours[day], day_billing_profile)
+                else:
+                    billed_hours[w][day] = w_hours[day]
 
-        self.billing_schema = billing_schema
-        return billing_schema
+
+        new_billed_hours, total_billing = self.parse_total(billed_hours)
+        new_hours_data, total_hours = self.parse_total(hours)
+
+        # conditional dump values
+        if dump_detailed:
+            with open("DETAIL_ore_lavoratori.json", "w") as f:
+                f.write(json.dumps(hours, indent=4, ensure_ascii=True))
+            with open("DETAIL_valori_da_fatturare.json", "w") as f:
+                f.write(json.dumps(billed_hours, indent=4, ensure_ascii=True))
+
+        if dump_values:
+            with open("ore_lavoratori.json", "w") as f:
+                f.write(json.dumps(new_hours_data, indent=4, ensure_ascii=True))
+            with open("valori_da_fatturare.json", "w") as f:
+                f.write(json.dumps(new_billed_hours, indent=4, ensure_ascii=True))
+
+        self.create_Excel(new_hours_data, total_billing, billing_profiles)
+        print(">> Billed Successfully")
 
     def parse_total(self, data):
         """ return a tuple containing ({worker:total}, {total:total})  """
@@ -1425,45 +1420,7 @@ class BillingManager():
 
         return (new_data, total)
 
-    def bill(self, total_content, billing_schema, dump_values=False, dump_detailed=False):
-
-        hours_data = {}
-        billing_data = {}
-
-        for worker in total_content:
-            hours_data[worker] = {}
-            billing_data[worker] = {}
-            for day_ in total_content[worker]:
-
-                # parsing hours of the day
-                hours_to_bill = self.parse_day(day_, total_content[worker][day_])
-                hours_data[worker][day_] = hours_to_bill
-
-                # apply billing profile for the day
-                billing_profile = self.billing_profiles[billing_schema[worker][day_]]
-                billed_hours = self.apply_billing_profile(hours_to_bill, billing_profile)
-                billing_data[worker][day_] = billed_hours
-
-        new_billing_data, total_billing = self.parse_total(billing_data)
-        new_hours_data, total_hours = self.parse_total(hours_data)
-
-        # conditional dump values
-        if dump_detailed:
-            with open("DETAIL_ore_lavoratori.json", "w") as f:
-                f.write(json.dumps(hours_data, indent=4, ensure_ascii=True))
-            with open("DETAIL_valori_da_fatturare.json", "w") as f:
-                f.write(json.dumps(billing_data, indent=4, ensure_ascii=True))
-
-        if dump_values:
-            with open("ore_lavoratori.json", "w") as f:
-                f.write(json.dumps(new_hours_data, indent=4, ensure_ascii=True))
-            with open("valori_da_fatturare.json", "w") as f:
-                f.write(json.dumps(new_billing_data, indent=4, ensure_ascii=True))
-
-        self.create_Excel(new_hours_data, total_billing, billing_schema)
-        print(">> BillingManager Done")
-
-    def create_Excel(self, content, total_billing, billing_schema, transposed=True):
+    def create_Excel(self, content, total_billing, transposed=True):
         df = pd.DataFrame.from_dict(content)
 
         if transposed:
@@ -1499,8 +1456,6 @@ class BillingManager():
                 cell.number_format = '#,##0.00€'
                 cell.font = openpyxl.styles.Font(bold=True)
                 cell.fill = footer_color
-
-        print(f">> {self.bill_name} REDATTO CON SUCCESSO")
 
 """
 path = "../test_data/cartellini.xlsx"

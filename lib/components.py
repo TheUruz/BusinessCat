@@ -2160,7 +2160,11 @@ class Billing_Window(Custom_Toplevel):
     # second_view
     def __init_BillingManager(self):
 
-        self.Biller = appLib.BillingManager(month=self.choosen_month.get(), year=self.choosen_year.get())
+        bill_name = self.bill_name_var.get()
+        if not bill_name:
+            bill_name = "Fattura"
+
+        self.Biller = appLib.BillingManager(bill_name, month=self.choosen_month.get(), year=self.choosen_year.get())
         self.Biller.set_badges_path(self.choosen_badge_var.get())
 
     def __select_all(self):
@@ -2328,9 +2332,11 @@ class Billing_Window(Custom_Toplevel):
                         widget.set(job_to_set)
 
     def __confirm_and_bill(self):
-        self.__save_data()
-        for w in self.WORKER_JOBS:
-            print(w, self.WORKER_JOBS[w])
+        self.__save_data() # save current data
+        self.WORKER_BILLING_PROFILES = self.Biller.parse_jobs_to_profiles(self.WORKER_JOBS) #create billing profiles from jobs
+        self.Biller.bill(self.WORKER_HOURS, self.WORKER_JOBS, self.WORKER_BILLING_PROFILES, dump_detailed=False, dump_values=False) #billing
+        messagebox.showinfo("Fatturazione conclusa", f"Documento {self.Biller.bill_name} redatto con successo")
+        self.open_new_window(root, Billing_Landing_Window) # returning to Billing_Landing_Window
 
 
     # views
