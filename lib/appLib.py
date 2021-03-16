@@ -972,6 +972,7 @@ class BillingManager():
             init_data = []
             with open(self.__billing_profiles_path, "w") as f:
                 f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
+            print("** created new billing_profile.json file")
 
         with open(self.__billing_profiles_path,"r") as f:
             self.billing_profiles = json.load(f)
@@ -985,6 +986,7 @@ class BillingManager():
             init_data = []
             with open(self.__jobs_path, "w") as f:
                 f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
+            print("** created new jobs.json file")
 
         with open(self.__jobs_path,"r") as f:
             self.jobs = json.load(f)
@@ -1329,6 +1331,14 @@ class BillingManager():
             name = f"Job {job_id} non trovato"
         return name
 
+    def get_billing_profile_obj(self, billing_profile_id):
+        billing_profile = None
+        for profile in self.billing_profiles:
+            if profile["id"] == billing_profile_id:
+                billing_profile = profile
+                break
+        return billing_profile
+
     def get_billing_profile_id(self, job_id):
         """ return billing profile id given job id """
         billing_profile_id = ""
@@ -1352,39 +1362,56 @@ class BillingManager():
                     workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
         return workers_billing_profiles
 
-    def bill(self, hours, jobs, billing_profiles, dump_values=False, dump_detailed=False):
-
+    def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
         billed_hours = {}
 
-        # for every worker
-        for w in hours:
-            billed_hours[w] = {}
-            w_hours = hours[w]
-            w_jobs = jobs[w]
-            w_billing_profiles = billing_profiles[w]
+        ####### unic sheet
+        if not bill_by_job:
+            for w in hours:
+                billed_hours[w] = {}
+                w_hours = hours[w]
+                w_jobs = jobs[w]
+                w_billing_profiles = billing_profiles[w]
 
-            # for every day
-            for day in w_hours:
-                day_job = w_jobs[day]
-                day_billing_profile_id = w_billing_profiles[day]
+                for day in w_hours:
+                    day_job = w_jobs[day]
+                    day_billing_profile_id = w_billing_profiles[day]
+                    day_billing_profile = self.get_billing_profile_obj(day_billing_profile_id)
 
-                # get profile ojb
-                day_billing_profile = None
-                for p_ in self.billing_profiles:
-                    if p_["id"] == day_billing_profile_id:
-                        day_billing_profile = p_
-                if not day_billing_profile and day_billing_profile_id:
-                    raise Exception(f"ERROR: cannot find billing profile for job {self.get_jobname(day_job)}")
+                    # if worker worked that day bill it, else append 0 values
+                    if day_job:
+                        billed_hours[w][day] = self.__apply_billing_profile(w_hours[day], day_billing_profile)
+                    else:
+                        billed_hours[w][day] = w_hours[day]
 
-                # if worker worked that day bill it, else append 0 values
-                if day_job:
-                    billed_hours[w][day] = self.__apply_billing_profile(w_hours[day], day_billing_profile)
-                else:
-                    billed_hours[w][day] = w_hours[day]
+            new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=False)
+            new_hours_data, total_hours = self.parse_total(hours, divided_by_job=False)
+            self.create_Excel(new_hours_data, total_billing, bill_by_job=bill_by_job)
 
+        #### a sheet for every job
+        elif bill_by_job:
+            hours_by_job = {}
+            for w in jobs:
+                for day in jobs[w]:
+                    current_job = jobs[w][day]
+                    if current_job:
+                        current_job = self.get_jobname(current_job)
+                        if current_job not in hours_by_job:
+                            hours_by_job[current_job] = {}
+                        if w not in hours_by_job[current_job]:
+                            hours_by_job[current_job][w] = {}
+                        hours_by_job[current_job][w][day] = hours[w][day]
 
-        new_billed_hours, total_billing = self.parse_total(billed_hours)
-        new_hours_data, total_hours = self.parse_total(hours)
+            for job in hours_by_job:
+                billed_hours[job] = {}
+                for w in hours_by_job[job]:
+                    billed_hours[job][w] = {}
+                    for day in hours_by_job[job][w]:
+                        billed_hours[job][w][day] = self.__apply_billing_profile(hours_by_job[job][w][day],self.get_billing_profile_obj(billing_profiles[w][day]))
+
+            new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=True)
+            new_hours_data, total_hours = self.parse_total(hours_by_job, divided_by_job=True)
+            self.create_Excel(new_hours_data, new_billed_hours, bill_by_job=bill_by_job)
 
         # conditional dump values
         if dump_detailed:
@@ -1399,34 +1426,66 @@ class BillingManager():
             with open("valori_da_fatturare.json", "w") as f:
                 f.write(json.dumps(new_billed_hours, indent=4, ensure_ascii=True))
 
-        self.create_Excel(new_hours_data, total_billing, billing_profiles)
         print(">> Billed Successfully")
 
-    def parse_total(self, data):
-        """ return a tuple containing ({worker:total}, {total:total})  """
+    def parse_total(self, data, divided_by_job=False):
+        """
+        if divided_by_job == False return a tuple containing ({worker:total}, {total:total})
+        if divided_by_job == True return a tuple containing ({job:{<worker>:total, job_total:job_total}}, {total:total})
+        """
         total = {}
         new_data = {}
 
-        for worker in data:
-            new_data[worker] = {}
-            for day in data[worker]:
-                for hour_type in data[worker][day]:
+        if not divided_by_job:
+            for worker in data:
+                new_data[worker] = {}
+                for day in data[worker]:
+                    for hour_type in data[worker][day]:
 
-                    # add to worker data
-                    if hour_type in new_data[worker]:
-                        new_data[worker][hour_type] += data[worker][day][hour_type]
-                    else:
-                        new_data[worker][hour_type] = data[worker][day][hour_type]
+                        # add to worker data
+                        if hour_type in new_data[worker]:
+                            new_data[worker][hour_type] += data[worker][day][hour_type]
+                        else:
+                            new_data[worker][hour_type] = data[worker][day][hour_type]
 
-                    # add to total
-                    if hour_type in total:
-                        total[hour_type] += data[worker][day][hour_type]
-                    else:
-                        total[hour_type] = data[worker][day][hour_type]
+                        # add to total
+                        if hour_type in total:
+                            total[hour_type] += data[worker][day][hour_type]
+                        else:
+                            total[hour_type] = data[worker][day][hour_type]
 
-            # round values
-            for h in new_data[worker]:
-                new_data[worker][h] = self.__round_float(new_data[worker][h], decimal_pos=2)
+                # round values
+                for h in new_data[worker]:
+                    new_data[worker][h] = self.__round_float(new_data[worker][h], decimal_pos=2)
+
+        elif divided_by_job:
+            for job in data:
+                new_data[job] = {}
+                for worker in data[job]:
+                    new_data[job][worker] = {}
+                    for day in data[job][worker]:
+                        for hour_type in data[job][worker][day]:
+                            if hour_type not in new_data[job][worker]:
+                                new_data[job][worker][hour_type] = 0.0
+                            new_data[job][worker][hour_type] += data[job][worker][day][hour_type]
+
+                # parse total for job and round values
+                job_total = {}
+                for worker_ in new_data[job]:
+                    for hour_type in new_data[job][worker_]:
+
+                        # add to job_total
+                        if hour_type not in job_total:
+                            job_total[hour_type] = 0.0
+                        job_total[hour_type] += new_data[job][worker_][hour_type]
+
+                        # add to total
+                        if hour_type not in total:
+                            total[hour_type] = 0.0
+                        total[hour_type] += new_data[job][worker_][hour_type]
+
+                        new_data[job][worker_][hour_type] = self.__round_float(new_data[job][worker_][hour_type],decimal_pos=2)
+                new_data[job]["job_total"] = job_total
 
         # round values
         for h in total:
@@ -1434,42 +1493,58 @@ class BillingManager():
 
         return (new_data, total)
 
-    def create_Excel(self, content, total_billing, transposed=True):
-        df = pd.DataFrame.from_dict(content)
+    def create_Excel(self, content, total_billing, transposed=True, bill_by_job=False):
 
-        if transposed:
-            df = df.T
+        for job in content:
 
-        # sort alphabetically rows and columns
-        df = df.sort_index()
-        df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
+            # adjust to billing type
+            if bill_by_job:
+                df = pd.DataFrame.from_dict(content[job])
+            else:
+                job = "Report Fatturazione"
+                df = pd.DataFrame.from_dict(content)
 
-        # add totals (rows total/column total)
-        df.loc[">> ORE TOTALI <<"] = df.sum(axis=0)
-        df.loc[">> € DA FATTURARE <<"] = total_billing
-        df['TOTALI'] = df.sum(axis=1)
+            if transposed:
+                df = df.T
 
-        # polish
-        df.index.rename("LAVORATORI", inplace=True)
-        df.replace(0, np.nan, inplace=True)
+            # sort alphabetically rows and columns
+            df = df.sort_index()
+            df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
 
-        #generating excel with df data
-        with pd.ExcelWriter(self.bill_name, mode="w") as writer:
-            sh_name = "Report Fatturazione"
-            df.to_excel(writer, sheet_name=sh_name, na_rep="", float_format="%.2f")
-            ws = writer.sheets[sh_name]
-            footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
+            # add totals (rows total/column total)
+            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0)
+            df.loc[">> € DA FATTURARE <<"] = total_billing[job]["job_total"] if bill_by_job else total_billing
+            df['TOTALI'] = df.sum(axis=1)
 
-            # style total hours
-            for cell in ws[f"{len(df)}:{len(df)}"]:
-                cell.font = openpyxl.styles.Font(bold=True)
-                cell.fill = footer_color
+            # polish
+            df.index.rename("LAVORATORI", inplace=True)
+            df.replace(0, np.nan, inplace=True)
 
-            # style billing totals
-            for cell in ws[f"{len(df)+1}:{len(df)+1}"]:
-                cell.number_format = '#,##0.00€'
-                cell.font = openpyxl.styles.Font(bold=True)
-                cell.fill = footer_color
+            #generating excel with df data
+            if os.path.exists(self.bill_name):
+                mode = "a"
+            else:
+                mode = "w"
+            with pd.ExcelWriter(self.bill_name, mode=mode) as writer:
+                df.to_excel(writer, sheet_name=job, na_rep="", float_format="%.2f")
+                ws = writer.sheets[job]
+                footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
+
+                # style total hours
+                for cell in ws[f"{len(df)}:{len(df)}"]:
+                    cell.font = openpyxl.styles.Font(bold=True)
+                    cell.fill = footer_color
+
+                # style billing totals
+                for cell in ws[f"{len(df)+1}:{len(df)+1}"]:
+                    cell.number_format = '#,##0.00€'
+                    cell.font = openpyxl.styles.Font(bold=True)
+                    cell.fill = footer_color
+
+            # if single sheet result break
+            if not bill_by_job:
+                break
+
 
 """
 path = "../test_data/cartellini.xlsx"

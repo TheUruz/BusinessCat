@@ -1339,7 +1339,7 @@ class Verificator_Window(Custom_Toplevel):
                 self.circle_label.config(text="Pronto", fg=appLib.color_green)
                 self.update()
 
-                openfile = messagebox.askyesno("Verifica terminata!", "Vuoi aprire il file di risulta?")
+                openfile = messagebox.askyesno("Verifica terminata", "Vuoi aprire il file di risulta?")
                 if openfile:
                     os.system("start"+ " " + self.Controller.verify_filename)
 
@@ -2220,12 +2220,8 @@ class Billing_Window(Custom_Toplevel):
         self.DAYS_CANVAS.pack(side="left", fill="both", expand=True)
         self.DAYS_FRAME = Frame(self.DAYS_CANVAS, bg=appLib.color_light_orange)
         self.DAYS_FRAME.pack(anchor="center", padx=10, pady=10, fill="both", expand=True)
-        self.DAYS_YSCROLL = Scrollbar(self.DAYS_FRAME_MASTER, orient="vertical", command=self.DAYS_CANVAS.yview)
-        self.DAYS_YSCROLL.pack(side="right", fill="y", expand=False)
-        self.DAYS_CANVAS.configure(yscrollcommand=self.DAYS_YSCROLL.set)
+        self.DAYS_FRAME.bind("<Configure>",lambda e: self.DAYS_CANVAS.configure(scrollregion=self.DAYS_CANVAS.bbox("all")))
 
-        self.DAYS_CANVAS.create_window((0, 0), window=self.DAYS_FRAME, anchor="nw")
-        self.DAYS_CANVAS.bind("<Configure>", lambda e: self.DAYS_CANVAS.configure(scrollregion=self.DAYS_CANVAS.bbox("all")))
 
         # putting days in frame
         for day in self.WORKER_JOBS[self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]].keys():
@@ -2242,6 +2238,17 @@ class Billing_Window(Custom_Toplevel):
                     day_frame.grid_columnconfigure(col, minsize=100)
                 else:
                     day_frame.grid_columnconfigure(col, minsize=350)
+
+        try:
+            self.DAYS_YSCROLL.destroy()
+        except:
+            pass
+        self.DAYS_YSCROLL = Scrollbar(self.DAYS_FRAME_MASTER, orient="vertical", command=self.DAYS_CANVAS.yview)
+        self.DAYS_YSCROLL.pack(side="right", fill="y", expand=False)
+        self.DAYS_CANVAS.configure(yscrollcommand=self.DAYS_YSCROLL.set)
+
+        self.DAYS_CANVAS.create_window((0, 0), window=self.DAYS_FRAME, anchor="nw")
+
 
         # reset widgets
         self.INFO_LBL.configure(text=f"""LAVORATORE:\t{self.SELECTED_NAMES[self.DISPLAYED_WORKER.get()]}""")
@@ -2306,6 +2313,7 @@ class Billing_Window(Custom_Toplevel):
         else:
             prev_w = all_workers_len
 
+        self.__clear_view(widget=self.DAYS_FRAME_MASTER)
         self.DISPLAYED_WORKER.set(prev_w)
         self.__display_worker()
 
@@ -2334,7 +2342,8 @@ class Billing_Window(Custom_Toplevel):
     def __confirm_and_bill(self):
         self.__save_data() # save current data
         self.WORKER_BILLING_PROFILES = self.Biller.parse_jobs_to_profiles(self.WORKER_JOBS) #create billing profiles from jobs
-        self.Biller.bill(self.WORKER_HOURS, self.WORKER_JOBS, self.WORKER_BILLING_PROFILES, dump_detailed=False, dump_values=False) #billing
+        self.Biller.bill(self.WORKER_HOURS, self.WORKER_JOBS, self.WORKER_BILLING_PROFILES, dump_detailed=False, dump_values=False, bill_by_job=False)
+        self.Biller.bill(self.WORKER_HOURS, self.WORKER_JOBS, self.WORKER_BILLING_PROFILES, dump_detailed=False, dump_values=False, bill_by_job=True)
         messagebox.showinfo("Fatturazione conclusa", f"Documento {self.Biller.bill_name} redatto con successo")
         self.open_new_window(root, Billing_Landing_Window) # returning to Billing_Landing_Window
 
@@ -2445,13 +2454,14 @@ class Billing_Window(Custom_Toplevel):
         self.NAMES_CANVAS.pack(side="left", fill="both", expand=True)
         self.NAMES_FRAME = Frame(self.NAMES_CANVAS, bg=appLib.color_light_orange)
         self.NAMES_FRAME.pack(anchor="center", padx=default_padx*2, pady=default_pady*2, fill="both", expand=True)
+        self.NAMES_FRAME.bind("<Configure>",lambda e: self.NAMES_CANVAS.configure(scrollregion=self.NAMES_CANVAS.bbox("all")))
 
         self.NAMES_YSCROLL = Scrollbar(self.NAMES_FRAME_MASTER, orient="vertical", command=self.NAMES_CANVAS.yview)
         self.NAMES_YSCROLL.pack(side="right", fill="y", expand=False)
         self.NAMES_CANVAS.configure(yscrollcommand=self.NAMES_YSCROLL.set)
 
         self.NAMES_CANVAS.create_window((0, 0), window=self.NAMES_FRAME, anchor="nw")
-        self.NAMES_CANVAS.bind("<Configure>", lambda e: self.NAMES_CANVAS.configure(scrollregion=self.NAMES_CANVAS.bbox("all")))
+
 
         # putting names in frame
         names = self.Biller.get_all_badges_names()
@@ -2582,6 +2592,5 @@ if __name__ == "__main__":
 
     # app entry point
     app = Home_Window(root)
-    #app = Billing_Window(root)
 
     app.mainloop()
