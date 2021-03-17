@@ -2100,6 +2100,7 @@ class Billing_Window(Custom_Toplevel):
         self.height = 450 # initial resize 650x700
         super().__init__(master, self.width, self.height)
 
+        self.master_ = master # keep refer to master
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Billing")
         self.margin = 15
@@ -2345,7 +2346,7 @@ class Billing_Window(Custom_Toplevel):
         self.Biller.bill(self.WORKER_HOURS, self.WORKER_JOBS, self.WORKER_BILLING_PROFILES, dump_detailed=False, dump_values=False, bill_by_job=False)
         self.Biller.bill(self.WORKER_HOURS, self.WORKER_JOBS, self.WORKER_BILLING_PROFILES, dump_detailed=False, dump_values=False, bill_by_job=True)
         messagebox.showinfo("Fatturazione conclusa", f"Documento {self.Biller.bill_name} redatto con successo")
-        self.open_new_window(root, Billing_Landing_Window) # returning to Billing_Landing_Window
+        self.open_new_window(self.master_, Billing_Landing_Window) # returning to Billing_Landing_Window
 
 
     # views

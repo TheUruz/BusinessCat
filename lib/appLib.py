@@ -1101,7 +1101,7 @@ class BillingManager():
             else:
                 tag = None
 
-        # adding time
+        # adding time (TIME IS ALWAYS ADDED IN BASE 100 eg. half an hour is not 0.30 but 0.5)
         if tag:
             if billing_profile["time_to_add"] and hours_to_bill[tag]:
                 if billing_profile["add_over_threshold"]:
@@ -1392,22 +1392,24 @@ class BillingManager():
         elif bill_by_job:
             hours_by_job = {}
             for w in jobs:
-                for day in jobs[w]:
-                    current_job = jobs[w][day]
-                    if current_job:
-                        current_job = self.get_jobname(current_job)
-                        if current_job not in hours_by_job:
-                            hours_by_job[current_job] = {}
-                        if w not in hours_by_job[current_job]:
-                            hours_by_job[current_job][w] = {}
-                        hours_by_job[current_job][w][day] = hours[w][day]
+                if w != "job_total":
+                    for day in jobs[w]:
+                        current_job = jobs[w][day]
+                        if current_job:
+                            current_job = self.get_jobname(current_job)
+                            if current_job not in hours_by_job:
+                                hours_by_job[current_job] = {}
+                            if w not in hours_by_job[current_job]:
+                                hours_by_job[current_job][w] = {}
+                            hours_by_job[current_job][w][day] = hours[w][day]
 
             for job in hours_by_job:
                 billed_hours[job] = {}
                 for w in hours_by_job[job]:
-                    billed_hours[job][w] = {}
-                    for day in hours_by_job[job][w]:
-                        billed_hours[job][w][day] = self.__apply_billing_profile(hours_by_job[job][w][day],self.get_billing_profile_obj(billing_profiles[w][day]))
+                    if w != "job_total":
+                        billed_hours[job][w] = {}
+                        for day in hours_by_job[job][w]:
+                            billed_hours[job][w][day] = self.__apply_billing_profile(hours_by_job[job][w][day],self.get_billing_profile_obj(billing_profiles[w][day]))
 
             new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=True)
             new_hours_data, total_hours = self.parse_total(hours_by_job, divided_by_job=True)
@@ -1497,6 +1499,8 @@ class BillingManager():
 
         for job in content:
 
+            total_ = content[job].pop("job_total") if bill_by_job else total_billing
+
             # adjust to billing type
             if bill_by_job:
                 df = pd.DataFrame.from_dict(content[job])
@@ -1513,7 +1517,7 @@ class BillingManager():
 
             # add totals (rows total/column total)
             df.loc[">> ORE TOTALI <<"] = df.sum(axis=0)
-            df.loc[">> € DA FATTURARE <<"] = total_billing[job]["job_total"] if bill_by_job else total_billing
+            df.loc[">> € DA FATTURARE <<"] = total_
             df['TOTALI'] = df.sum(axis=1)
 
             # polish
