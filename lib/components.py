@@ -2126,6 +2126,13 @@ class Billing_Window(Custom_Toplevel):
                 child.pack_forget()
                 child.grid_forget()
 
+    def __unlock_widget(self, widget):
+        if str(widget.cget("state")) == "disabled":
+            try:
+                widget.configure(state="readonly")
+            except:
+                widget.configure(state="normal")
+
     # first_view
     def __set_badges(self):
         filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Select a File",filetype=[("Excel File", "*.xlsx*"), ("Excel File", "*.xls*")])
@@ -2150,13 +2157,6 @@ class Billing_Window(Custom_Toplevel):
             self.choosen_year.set(choosen_year)
             self.dynamic_text.set(self.instruction_steps[3])
             self.__unlock_widget(self.start_bill_btn)
-
-    def __unlock_widget(self, widget):
-        if str(widget.cget("state")) == "disabled":
-            try:
-                widget.configure(state="readonly")
-            except:
-                widget.configure(state="normal")
 
     # second_view
     def __init_BillingManager(self):

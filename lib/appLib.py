@@ -1362,6 +1362,8 @@ class BillingManager():
                     workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
         return workers_billing_profiles
 
+
+
     def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
         billed_hours = {}
 
@@ -1548,15 +1550,3 @@ class BillingManager():
             # if single sheet result break
             if not bill_by_job:
                 break
-
-
-"""
-path = "../test_data/cartellini.xlsx"
-Fatturatore = BillingManager()
-
-Fatturatore.set_badges_path(path)
-all_badges = Fatturatore.parse_badges()
-billing_schema = Fatturatore.create_billing_schema(all_badges, random_=True)
-
-Fatturatore.bill(all_badges, billing_schema)
-"""
