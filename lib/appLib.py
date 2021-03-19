@@ -915,9 +915,9 @@ class PaycheckController():
         return problems
 
 class BillingManager():
-    def __init__(self, bill_name, month=datetime.datetime.now().month, year=datetime.datetime.now().year):
+    def __init__(self, bill_name="Fattura", month=datetime.datetime.now().month, year=datetime.datetime.now().year):
         self.bill_name = f"{bill_name}.xlsx"
-        self.badges_path = None #badges_path
+        self.badges_path = None # badges_path
         self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
         self.name_cell = "B5" # in che cella del badge_path si trova il nome
         self.pairing_schema = {
@@ -925,24 +925,72 @@ class BillingManager():
             "ENT USC": ["ENT", "USC"],
             "GIOR PROG": ["GIOR", "PROG"]
         }
-        self.billing_schema = None
+        self.untouchable_keys = ["id", "tag"]
         self.total_content = None
 
-
         # config paths
-        #self.__bills_path = "../config_files/BusinessCat billing/bills.json"
-        self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
-        self.__jobs_path = "../config_files/BusinessCat billing/jobs.json"
+        self._clients_path = "../config_files/BusinessCat billing/clients.json"
+        self._billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
+        self._jobs_path = "../config_files/BusinessCat billing/jobs.json"
 
         # load data from config paths
-        #self.__load_bills()
+        self.__load_clients()
         self.__load_billing_profiles()
         self.__load_jobs()
 
-        # set billing time
-        self.set_billing_time(month, year)
+        # defaults
+        self.default_new_job = {
+            "id":"",
+            "name":"",
+            "billing_profile_id":""
+        }
+        self.default_new_client = {
+            "id":"",
+            "name":""
+        }
+        self.default_billing_profile = {
+            "id": "",
+            "name": "",
+            "pricelist": [
+                {
+                    "tag": "OR",
+                    "name": "ore_ordinarie",
+                    "price": 0.0
+                },
+                {
+                    "tag": "ST",
+                    "name": "ore_straordinarie",
+                    "price": 0.0
+                },
+                {
+                    "tag": "MN",
+                    "name": "ore_notturne",
+                    "price": 0.0
+                },
+                {
+                    "tag": "OF",
+                    "name": "ore_festive",
+                    "price": 0.0
+                },
+                {
+                    "tag": "SF",
+                    "name": "ore_straordinarie_festive",
+                    "price": 0.0
+                },
+                {
+                    "tag": "SN",
+                    "name": "ore_straordinarie_notturne",
+                    "price": 0.0
+                },
+                {
+                    "tag": "FN",
+                    "name": "ore_festive_notturne",
+                    "price": 0.0
+                }
+            ]
+        }
 
-        print(">> BillingManager Ready")
+        print(">> BillingManager Initialized")
 
 
     """    PRIVATE METHODS    """
@@ -958,23 +1006,31 @@ class BillingManager():
             raise TypeError("self.badges_path is not an Excel!")
         return engine
 
-    def __load_bills(self):
+    def __load_clients(self):
         """ read and load current billing_profiles file """
-        with open(self.__bills_path,"r") as f:
-            self.bills = json.load(f)
-        print("** bills caricati")
+
+        # create empty file if not existing
+        if not os.path.exists(self._clients_path):
+            init_data = []
+            with open(self._clients_path, "w") as f:
+                f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
+            print("** created new clients.json file")
+
+        with open(self._clients_path,"r") as f:
+            self.clients = json.load(f)
+        print("** clients caricati")
 
     def __load_billing_profiles(self):
         """ read and load current billing_profiles file """
 
         # create empty file if not existing
-        if not os.path.exists(self.__billing_profiles_path):
+        if not os.path.exists(self._billing_profiles_path):
             init_data = []
-            with open(self.__billing_profiles_path, "w") as f:
+            with open(self._billing_profiles_path, "w") as f:
                 f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
             print("** created new billing_profile.json file")
 
-        with open(self.__billing_profiles_path,"r") as f:
+        with open(self._billing_profiles_path,"r") as f:
             self.billing_profiles = json.load(f)
         print("** billing_profiles caricati")
 
@@ -982,13 +1038,13 @@ class BillingManager():
         """ read and load current billing_profiles file """
 
         # create empty file if not existing
-        if not os.path.exists(self.__jobs_path):
+        if not os.path.exists(self._jobs_path):
             init_data = []
-            with open(self.__jobs_path, "w") as f:
+            with open(self._jobs_path, "w") as f:
                 f.write(json.dumps(init_data, indent=4, ensure_ascii=True))
             print("** created new jobs.json file")
 
-        with open(self.__jobs_path,"r") as f:
+        with open(self._jobs_path,"r") as f:
             self.jobs = json.load(f)
             self.jobs_namelist = sorted([job["name"] for job in self.jobs])
             self.jobs_namelist.insert(0,"")
@@ -996,6 +1052,9 @@ class BillingManager():
 
     def __load_Excel_badges(self):
         """Load excel data of badges file (must be .xls or .xlsx)"""
+        if not self.badges_path:
+            raise Exception("ERROR: No badges_path specified")
+
         engine = self.__get_engine()
         try:
             if engine == "openpyxl":
@@ -1147,28 +1206,21 @@ class BillingManager():
         return priced_hours
 
 
-    """    PUBLIC METHODS    """
-    def set_badges_path(self, badges_path):
+    """     PROTECTED METHODS   """
+    # must be called once before billing
+    def _set_badges_path(self, badges_path):
         if not os.path.exists(badges_path):
             raise ValueError("ERROR: Cannot find badges path")
         self.badges_path = badges_path
         print("** badges_path caricato")
 
-    def set_billing_time(self, month, year):
+    # must be called once before billing
+    def _set_billing_time(self, month, year):
         self.billing_year = int(year)
         self.billing_month = int(month)
         self._holidays = holidays.IT(years=[self.billing_year, self.billing_year - 1])
 
-    def get_all_badges_names(self):
-        """ return an array of all names found in excel file """
-        xlsx_data, sheet_names, engine = self.__load_Excel_badges()
-        names = []
-        for sheetNo, sheet in enumerate(sheet_names):
-            sheet_data = xlsx_data[sheet] if engine == "openpyxl" else xlsx_data.get_sheet(sheetNo)
-            names.append(self.__get_badge_name(sheet_data))
-        return names
-
-    def parse_badges(self, names=[]):
+    def _parse_badges(self, names=[]):
         """
         read and fix the badges form, adjusting column names and preparing data to be read by other methods.
         returning a dict containing every worker as key and a subdict containing every of its workday as value
@@ -1246,7 +1298,7 @@ class BillingManager():
         self.total_content = total_content
         return total_content
 
-    def parse_days(self, total_content):
+    def _parse_days(self, total_content):
         """ Pointing out what is the type of the hours worked by the worker that day """
 
         to_return = {}
@@ -1320,6 +1372,86 @@ class BillingManager():
                 to_return[worker][day] = parsed_day
         return to_return
 
+    def _new_job_id(self):
+        id_lenght = 4
+
+        check_high = 0
+        for job in self.jobs:
+            if int(job["id"]) > check_high:
+                check_high = int(job["id"])
+        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
+
+        new_id = "0"*(id_lenght-len(check_high)) + check_high
+        return new_id
+
+    def _new_client_id(self):
+        id_lenght = 4
+
+        check_high = 0
+        for client in self.clients:
+            if int(client["id"]) > check_high:
+                check_high = int(client["id"])
+        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
+
+        new_id = "0"*(id_lenght-len(check_high)) + check_high
+        return new_id
+
+    def _new_billing_profile_id(self):
+        id_lenght = 4
+
+        check_high = 0
+        for profile in self.billing_profiles:
+            if int(profile["id"]) > check_high:
+                check_high = int(profile["id"])
+        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
+
+        new_id = "0"*(id_lenght-len(check_high)) + check_high
+        return new_id
+
+    def _add_job(self):
+        new_ = copy.deepcopy(self.default_new_job)
+        new_["id"] = self._new_job_id()
+        self.jobs.append(new_)
+        return True
+
+    def _rmv_job(self, pos):
+        if len(self.jobs) > 0:
+            self.jobs.pop(pos)
+        return True
+
+    def _add_client(self):
+        new_ = copy.deepcopy(self.default_new_client)
+        new_["id"] = self._new_client_id()
+        self.clients.append(new_)
+        return True
+
+    def _rmv_client(self, pos):
+        if len(self.clients) > 0:
+            self.clients.pop(pos)
+        return True
+
+    def _add_billing_profile(self):
+        new_ = copy.deepcopy(self.default_billing_profile)
+        new_["id"] = self._new_billing_profile_id()
+        self.billing_profiles.append(new_)
+        return True
+
+    def _rmv_billing_profile(self, pos):
+        if len(self.billing_profiles) > 0:
+            self.billing_profiles.pop(pos)
+        return True
+
+
+    """    PUBLIC METHODS    """
+    def get_all_badges_names(self):
+        """ return an array of all names found in excel file """
+        xlsx_data, sheet_names, engine = self.__load_Excel_badges()
+        names = []
+        for sheetNo, sheet in enumerate(sheet_names):
+            sheet_data = xlsx_data[sheet] if engine == "openpyxl" else xlsx_data.get_sheet(sheetNo)
+            names.append(self.__get_badge_name(sheet_data))
+        return names
+
     def get_jobname(self, job_id):
         """ given id, gets job name """
         name = ""
@@ -1350,6 +1482,7 @@ class BillingManager():
             raise Exception(f"Billing Profile for Job {job_id} non trovato")
         return billing_profile_id
 
+    # probably will be deleted
     def parse_jobs_to_profiles(self, workers_jobs):
         """ creating a dict from parsing every worker day to its billing profile and returning it """
         workers_billing_profiles = {}
@@ -1361,8 +1494,6 @@ class BillingManager():
                 else:
                     workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
         return workers_billing_profiles
-
-
 
     def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
         billed_hours = {}

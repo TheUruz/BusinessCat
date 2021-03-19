@@ -26,6 +26,9 @@ from email import encoders
 
 import mysql.connector
 
+# TEMPLATE CLASSES
+
+# general purpose
 class Custom_Toplevel(Toplevel):
     def __init__(self, master=None, width=100, height=100):
         super().__init__(master)
@@ -55,6 +58,30 @@ class Custom_Toplevel(Toplevel):
         """ defining closing window behavior """
         if messagebox.askokcancel("Esci", "Vuoi davvero uscire da BusinessCat?"):
             master.destroy()
+
+# billing windows
+class Billing_template(Custom_Toplevel):
+    def __init__(self, master=None, width=100, height=100):
+        super().__init__(master)
+
+        self.width = width
+        self.height = height
+        self.__screen_width = master.winfo_screenwidth()
+        self.__screen_height = master.winfo_screenheight()
+        self.geometry(f"{self.width}x{self.height}+{int((self.__screen_width / 2 - self.width / 2))}+{int((self.__screen_height / 2 - self.height / 2))}")
+        self.title("BusinessCat Billing Manager")
+        self.iconbitmap(appLib.icon_path)
+        self.resizable(False, False)
+        self.protocol("WM_DELETE_WINDOW", lambda: self._close(master))
+        self.prior_window = None
+        self.margin = 15
+        self.info_wraplength = 200
+
+        self.Biller = appLib.BillingManager()
+
+
+
+#############################################################################
 
 class Login_Window(Custom_Toplevel):
     def __init__(self, master=None):
@@ -1353,7 +1380,7 @@ class Verificator_Window(Custom_Toplevel):
 
 
 # BILLING WINDOWS
-class Billing_Landing_Window(Custom_Toplevel):
+class Billing_Landing_Window(Billing_template):
     def __init__(self, master=None):
         self.width = 500
         self.height = 240
@@ -1361,7 +1388,6 @@ class Billing_Landing_Window(Custom_Toplevel):
 
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Billing Manager")
-        self.margin = 15
 
 
         # define back button
@@ -1375,15 +1401,17 @@ class Billing_Landing_Window(Custom_Toplevel):
         # define buttons frame
         self.BUTTONS_FRAME = Frame(self, bg=appLib.default_background)
         self.BUTTONS_FRAME.pack(anchor="center", padx=self.margin, fill="both", expand=True)
-        self.jobs_button = Button(self.BUTTONS_FRAME, width=15, text="Jobs", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Jobs_Window))
+        self.jobs_button = Button(self.BUTTONS_FRAME, width=15, text="Mansioni", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Jobs_Window))
         self.jobs_button.grid(column=0, row=0, pady=5, padx=5)
-        self.apply_balloon_to_widget(self.jobs_button, "Visualizza e edita le possibili mansioni nelle fatture")
-        self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Billing Profiles", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_BillingProfiles_Window))
+        self.clients_button = Button(self.BUTTONS_FRAME, width=15, text="Clienti", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Clients_Window))
+        self.clients_button.grid(column=1, row=0, pady=5, padx=5)
+        self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Profili", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Profiles_Window))
         self.billing_profiles_button.grid(column=2, row=0, pady=5, padx=5)
-        self.apply_balloon_to_widget(self.billing_profiles_button, "Visualizza e edita i possiibli profili di fatturazione")
 
-        self.start_billing_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Billing_Window))
-        self.start_billing_btn.grid(column=1, row=2, pady=self.margin, padx=5)
+        self.create_model_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA MODELLO", font=("Calibri", 10, "bold"))
+        self.create_model_btn.grid(column=0, row=2, pady=self.margin, padx=5)
+        self.bill_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"))
+        self.bill_btn.grid(column=2, row=2, pady=self.margin, padx=5)
 
         #resize grid
         size = self.BUTTONS_FRAME.grid_size()
@@ -1392,7 +1420,7 @@ class Billing_Landing_Window(Custom_Toplevel):
         for row in range(size[1]):
             self.BUTTONS_FRAME.grid_rowconfigure(row, minsize=self.margin, weight=1)
 
-class Edit_Jobs_Window(Custom_Toplevel):
+class Edit_Jobs_Window(Billing_template):
     def __init__(self, master=None):
         self.width = 500
         self.height = 490
@@ -1400,19 +1428,9 @@ class Edit_Jobs_Window(Custom_Toplevel):
 
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Edit Jobs")
-        self.margin = 15
-        self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
-        self.__load_billing_profiles()
-        self.__jobs_path = "../config_files/BusinessCat billing/jobs.json"
-        self.__load_jobs()
-        self.displayed_job = IntVar()
-        self.displayed_job.set(0)
-        self.untouchable_keys = ["id"]
-        self.default_new_job = {
-            "id":"",
-            "name":"",
-            "billing_profile_id":""
-        }
+
+        self.displayed_ = IntVar()
+        self.displayed_.set(0)
 
 
         # define back button
@@ -1435,11 +1453,11 @@ class Edit_Jobs_Window(Custom_Toplevel):
 
         # define add/rmv buttons
         self.add_lbl = Label(self.ADD_RMV_FRAME, text="+", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_green)
-        self.add_lbl.bind("<Button-1>", lambda e: self.add_job())
+        self.add_lbl.bind("<Button-1>", lambda e: self.add_())
         self.apply_balloon_to_widget(self.add_lbl, "Aggiungi un nuovo Job")
         self.add_lbl.pack(side="right", padx=5)
         self.rmv_lbl = Label(self.ADD_RMV_FRAME, text="-", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_red)
-        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_job())
+        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_())
         self.apply_balloon_to_widget(self.rmv_lbl, "Rimuovi il Job corrente")
         self.rmv_lbl.pack(side="right", padx=5)
 
@@ -1451,15 +1469,15 @@ class Edit_Jobs_Window(Custom_Toplevel):
         self.NAV_FRAME.grid_propagate(0)
 
         # define previous button
-        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_job)
+        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_)
         self.previous_button.grid(row=0, column=0, padx=(0,navbar_padx), sticky="w")
 
         # define info label
-        self.info_label = Label(self.NAV_FRAME, font=("Calibri", 12, "bold"), bg=navbar_background)
+        self.info_label = Label(self.NAV_FRAME, font=("Calibri", 12, "bold"), bg=navbar_background, wraplength=self.info_wraplength)
         self.info_label.grid(row=0, column=1, padx=navbar_padx, sticky="nsew")
 
         # define next button
-        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_job)
+        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_)
         self.next_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
 
         #resize grid
@@ -1472,14 +1490,6 @@ class Edit_Jobs_Window(Custom_Toplevel):
 
 
     """ PRIVATE METHODS """
-    def __load_jobs(self):
-        with open(self.__jobs_path, "r") as f:
-            self.jobs = json.load(f)
-
-    def __load_billing_profiles(self):
-        with open(self.__billing_profiles_path, "r") as f:
-            self.billing_profiles = json.load(f)
-
     def __parse_data(self):
         keys = []
         values = []
@@ -1490,62 +1500,42 @@ class Edit_Jobs_Window(Custom_Toplevel):
                 values.append(self.cmb_var.get().split(" ")[0])
             elif isinstance(child, Entry):
                 values.append(child.get().strip())
-        new_job = dict(zip(keys,values))
-        return new_job
+        new_ = dict(zip(keys,values))
+        return new_
 
     def __save_data(self, new_data=None):
         """ save current displayed job """
-        if new_data and new_data != self.jobs[self.displayed_job.get()]:
+        if new_data and new_data != self.Biller.jobs[self.displayed_.get()]:
             save = messagebox.askyesno("Salvare?", "I dati di questa mansione sono stati modificati\nsi desidera salvare i cambiamenti?")
             if save:
-                self.jobs[self.displayed_job.get()] = new_data
+                self.Biller.jobs[self.displayed_.get()] = new_data
 
-        with open(self.__jobs_path, "w") as f:
-            f.write(json.dumps(self.jobs, indent=4))
-
-    def __get_new_job_id(self):
-        id_lenght = 4
-
-        check_high = 0
-        for job in self.jobs:
-            if int(job["id"]) > check_high:
-                check_high = int(job["id"])
-        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
-
-        new_id = "0"*(id_lenght-len(check_high)) + check_high
-        return new_id
-
-    def __get_billing_profile_display_name(self, id):
-        name = ""
-        for profile in self.billing_profiles:
-            if profile["id"] == id:
-                name = profile["name"]
-                break
-        return f"{id} {name}".strip()
+        with open(self.Biller._jobs_path, "w") as f:
+            f.write(json.dumps(self.Biller.jobs, indent=4))
 
 
     """ PUBLIC METHODS """
-    def next_job(self):
+    def next_(self):
 
         self.__save_data(self.__parse_data())
 
-        max_lenght = len(self.jobs) -1 if len(self.jobs) > 0 else 0
-        if self.displayed_job.get() < max_lenght:
-            self.displayed_job.set(self.displayed_job.get() + 1)
+        max_lenght = len(self.Biller.jobs) -1 if len(self.Biller.jobs) > 0 else 0
+        if self.displayed_.get() < max_lenght:
+            self.displayed_.set(self.displayed_.get() + 1)
         else:
-            self.displayed_job.set(0)
+            self.displayed_.set(0)
 
         self.display_data()
 
-    def previous_job(self):
+    def previous_(self):
 
         self.__save_data(self.__parse_data())
 
-        max_lenght = len(self.jobs) -1 if len(self.jobs) > 0 else 0
-        if self.displayed_job.get() > 0:
-            self.displayed_job.set(self.displayed_job.get() - 1)
+        max_lenght = len(self.Biller.jobs) -1 if len(self.Biller.jobs) > 0 else 0
+        if self.displayed_.get() > 0:
+            self.displayed_.set(self.displayed_.get() - 1)
         else:
-            self.displayed_job.set(max_lenght)
+            self.displayed_.set(max_lenght)
 
         self.display_data()
 
@@ -1569,14 +1559,14 @@ class Edit_Jobs_Window(Custom_Toplevel):
         self.JSON_CONTAINER.grid_columnconfigure(1, minsize=txt_box_size, weight=3)
 
         # senza lavori da mostrare
-        if not self.jobs:
+        if not self.Biller.jobs:
             no_jobs_lbl = Label(self.JSON_CONTAINER, text="NON CI SONO JOBS DA MOSTRARE", font=("Calibri", 12), bg=appLib.color_light_orange)
             no_jobs_lbl.pack(anchor="center", ipady=100)
 
         # iterate throught jobs and create new grid in the new container
         try:
             i = 0
-            for k,v in self.jobs[self.displayed_job.get()].items():
+            for k,v in self.Biller.jobs[self.displayed_.get()].items():
 
                 if k == "name":
                     job_name = v
@@ -1585,20 +1575,22 @@ class Edit_Jobs_Window(Custom_Toplevel):
                 key.grid(row=i, column=0, pady=(2,1), padx=padx, sticky="nsew")
 
                 if k == "billing_profile_id":
+                    profile = self.Biller.get_billing_profile_obj(v)
+                    display_name = f"{profile['id']} {profile['name']}" if profile else ""
                     self.cmb_var = StringVar()
                     self.billing_profile_combobox = ttk.Combobox(self.JSON_CONTAINER, width=28, textvariable=self.cmb_var, state="readonly")
-                    self.billing_profile_combobox['values'] = [f'{x["id"]} {x["name"]}' for x in self.billing_profiles]
+                    self.billing_profile_combobox['values'] = [f'{x["id"]} {x["name"]}' for x in self.Biller.billing_profiles]
                     self.billing_profile_combobox.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
-                    self.billing_profile_combobox.bind('<Map>', lambda event: self.cmb_var.set(self.__get_billing_profile_display_name(v)))
+                    self.billing_profile_combobox.bind('<Map>', lambda event: self.cmb_var.set(display_name))
 
                 else:
                     value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
                     value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
                     value.insert(0, v)
 
-                # conditionally disable fields
-                if k in self.untouchable_keys:
-                    value.config(state=DISABLED)
+                    # conditionally disable fields
+                    if k in self.Biller.untouchable_keys:
+                        value.config(state=DISABLED)
 
                 i+=1
 
@@ -1620,24 +1612,23 @@ class Edit_Jobs_Window(Custom_Toplevel):
         # change label
         self.info_label.config(text=f"{job_name}")
 
-    def add_job(self):
+    def add_(self):
         create_new = messagebox.askyesno("", "Vuoi creare un nuovo Job?")
         if create_new:
-            new_job = copy.deepcopy(self.default_new_job)
-            new_job["id"] = self.__get_new_job_id()
-            self.jobs.append(new_job)
-            go_to_last = messagebox.askyesno("", "Il nuovo Job è stato inizializzato, vuoi visualizzarlo?")
-            self.__save_data(self.__parse_data())  # save current job
+            success = self.Biller._add_job()
+            if success:
+                go_to_last = messagebox.askyesno("", "Il nuovo Job è stato inizializzato, vuoi visualizzarlo?")
+                self.__save_data(self.__parse_data())  # save current job
 
-            if go_to_last:
-                self.displayed_job.set(len(self.jobs)-1) # set destination job to the new one
-                self.display_data() # display destination job
+                if go_to_last:
+                    self.displayed_.set(len(self.Biller.jobs)-1) # set destination job to the new one
+            self.display_data()
 
-    def remove_job(self):
+    def remove_(self):
         confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo Job?")
         if confirm_delete:
-            self.jobs.pop(self.displayed_job.get())
-            self.displayed_job.set(self.displayed_job.get() - 1)  # set destination job to the previous one
+            self.Biller._rmv_job(self.displayed_.get())
+            self.displayed_.set(self.displayed_.get() - 1)  # set destination job to the previous one
             self.__save_data()  # save current job
             self.display_data() # display destination job
 
@@ -1651,7 +1642,212 @@ class Edit_Jobs_Window(Custom_Toplevel):
         new = new_window(master)
         new.prior_window = type(self)
 
-class Edit_BillingProfiles_Window(Custom_Toplevel):
+class Edit_Clients_Window(Billing_template):
+    def __init__(self, master=None):
+        self.width = 500
+        self.height = 490
+        super().__init__(master, self.width, self.height)
+
+        self.config(bg=appLib.default_background)
+        self.title(self.title().split("-")[:1][0] + " - " + "Edit Clients")
+
+        self.displayed_ = IntVar()
+        self.displayed_.set(0)
+
+        # define back button
+        self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, self.prior_window))
+        self.back_button.pack(anchor="w", pady=(self.margin,0), padx=(self.margin,0))
+
+        ####### define main frame structure
+        self.MASTER_FRAME = Frame(self, bg=appLib.default_background)
+        self.MASTER_FRAME.pack(anchor="center", pady=(self.margin,0))
+
+        self.ADD_RMV_FRAME = Frame(self.MASTER_FRAME, bg=appLib.default_background)
+        self.ADD_RMV_FRAME.grid(sticky="nsew", columnspan=4)
+
+        self.DATA_FRAME = Frame(self.MASTER_FRAME,width=420, height=320, bg=appLib.default_background)
+        self.DATA_FRAME.grid(row=1, columnspan=4, sticky="nsew")
+        self.DATA_FRAME.pack_propagate(0)
+        self.CANVAS = Canvas(self.DATA_FRAME)
+        self.CANVAS.pack(side="left", fill="both", expand=True)
+        self.CANVAS.config(bg=appLib.color_light_orange)
+
+        # define add/rmv buttons
+        self.add_lbl = Label(self.ADD_RMV_FRAME, text="+", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_green)
+        self.add_lbl.bind("<Button-1>", lambda e: self.add_())
+        self.add_lbl.pack(side="right", padx=5)
+        self.rmv_lbl = Label(self.ADD_RMV_FRAME, text="-", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_red)
+        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_())
+        self.rmv_lbl.pack(side="right", padx=5)
+
+        # define navbar
+        navbar_background = appLib.default_background
+        navbar_padx = 40
+        self.NAV_FRAME = Frame(self, width=420, height=50, bg=navbar_background)
+        self.NAV_FRAME.pack(anchor="center", pady=(5,0))
+        self.NAV_FRAME.grid_propagate(0)
+
+        # define previous button
+        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_)
+        self.previous_button.grid(row=0, column=0, padx=(0,navbar_padx), sticky="w")
+
+        # define info label
+        self.info_label = Label(self.NAV_FRAME, font=("Calibri", 12, "bold"), bg=navbar_background, wraplength=self.info_wraplength)
+        self.info_label.grid(row=0, column=1, padx=navbar_padx, sticky="nsew")
+
+        # define next button
+        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_)
+        self.next_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
+
+        #resize grid
+        size = self.NAV_FRAME.grid_size()
+        for col in range(size[0]):
+            self.NAV_FRAME.grid_columnconfigure(col, minsize=self.NAV_FRAME.winfo_width()/3, weight=1)
+
+        #fetch and display json data
+        self.display_data()
+
+
+    """ PRIVATE METHODS """
+    def __parse_data(self):
+        keys = []
+        values = []
+        for child in self.JSON_CONTAINER.winfo_children():
+            if isinstance(child, Label):
+                keys.append(child.cget("text"))
+            elif isinstance(child, ttk.Combobox):
+                values.append(self.cmb_var.get().split(" ")[0])
+            elif isinstance(child, Entry):
+                values.append(child.get().strip())
+        new_ = dict(zip(keys,values))
+        return new_
+
+    def __save_data(self, new_data=None):
+        """ save current displayed job """
+        if new_data and new_data != self.Biller.clients[self.displayed_.get()]:
+            save = messagebox.askyesno("Salvare?", "I dati di questo cliente sono stati modificati\nsi desidera salvare i cambiamenti?")
+            if save:
+                self.Biller.clients[self.displayed_.get()] = new_data
+
+        with open(self.Biller._clients_path, "w") as f:
+            f.write(json.dumps(self.Biller.clients, indent=4))
+
+    """ PUBLIC METHODS """
+    def next_(self):
+        self.__save_data(self.__parse_data())
+
+        max_lenght = len(self.Biller.clients) -1 if len(self.Biller.clients) > 0 else 0
+        if self.displayed_.get() < max_lenght:
+            self.displayed_.set(self.displayed_.get() + 1)
+        else:
+            self.displayed_.set(0)
+
+        self.display_data()
+
+    def previous_(self):
+        self.__save_data(self.__parse_data())
+
+        max_lenght = len(self.Biller.clients) -1 if len(self.Biller.clients) > 0 else 0
+        if self.displayed_.get() > 0:
+            self.displayed_.set(self.displayed_.get() - 1)
+        else:
+            self.displayed_.set(max_lenght)
+
+        self.display_data()
+
+    def display_data(self):
+        # clear previous view
+        try:
+            self.JSON_CONTAINER.destroy()
+        except:
+            pass
+
+        padx = 5
+        label_size = 60
+        txt_box_size = 300
+        name = ""
+
+        # set new container
+        self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
+        self.JSON_CONTAINER.pack(fill="both", expand=True)
+        self.JSON_CONTAINER.grid_columnconfigure(0, minsize=label_size, weight=1)
+        self.JSON_CONTAINER.grid_columnconfigure(1, minsize=txt_box_size, weight=3)
+
+        # senza lavori da mostrare
+        if not self.Biller.clients:
+            no_jobs_lbl = Label(self.JSON_CONTAINER, text="NON CI SONO CLIENTI DA MOSTRARE", font=("Calibri", 12), bg=appLib.color_light_orange)
+            no_jobs_lbl.pack(anchor="center", ipady=100)
+
+        # iterate throught jobs and create new grid in the new container
+        try:
+            i = 0
+            for k,v in self.Biller.clients[self.displayed_.get()].items():
+
+                if k == "name":
+                    name = v
+
+                key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
+                key.grid(row=i, column=0, pady=(2,1), padx=padx, sticky="nsew")
+
+                value = Entry(self.JSON_CONTAINER, bg=appLib.default_background)
+                value.grid(row=i, column=1, pady=(2,1), padx=padx, sticky="nsew")
+                value.insert(0, v)
+
+                # conditionally disable fields
+                if k in self.Biller.untouchable_keys:
+                    value.config(state=DISABLED)
+
+                i+=1
+
+            # define displayed data scrollbar
+            try:
+                self.YSCROLL.destroy()
+            except:
+                pass
+            self.YSCROLL = Scrollbar(self.DATA_FRAME, orient="vertical", command=self.CANVAS.yview)
+            self.YSCROLL.pack(side="right", fill="y", expand=False)
+            self.CANVAS.configure(yscrollcommand=self.YSCROLL.set)
+
+            self.CANVAS.create_window((0,0), window=self.JSON_CONTAINER, anchor="nw")
+            self.CANVAS.bind("<Configure>", lambda e: self.CANVAS.configure(scrollregion=self.CANVAS.bbox("all")))
+
+        except:
+            pass
+
+        # change label
+        self.info_label.config(text=f"{name}")
+
+    def add_(self):
+        create_new = messagebox.askyesno("", "Vuoi aggiungere un cliente?")
+        if create_new:
+            success = self.Biller._add_client()
+            if success:
+                go_to_last = messagebox.askyesno("", "Il nuovo cliente è stato inizializzato, vuoi visualizzarlo?")
+                self.__save_data(self.__parse_data())  # save current
+
+                if go_to_last:
+                    self.displayed_.set(len(self.Biller.clients)-1) # set destination job to the new one
+            self.display_data()
+
+    def remove_(self):
+        confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo cliente?")
+        if confirm_delete:
+            self.Biller._rmv_client(self.displayed_.get())
+            self.displayed_.set(self.displayed_.get() - 1)  # set destination client to the previous one
+            self.__save_data()
+            self.display_data()
+
+    # override
+    def open_new_window(self, master, new_window):
+        """ use this method to pass from one window to another"""
+        data = self.__parse_data()
+        self.__save_data(data)
+
+        self.destroy()
+        new = new_window(master)
+        new.prior_window = type(self)
+
+class Edit_Profiles_Window(Billing_template):
     def __init__(self, master=None):
         self.width = 500
         self.height = 490
@@ -1659,62 +1855,9 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Edit Billing Profiles")
-        self.margin = 15
-        self.__billing_profiles_path = "../config_files/BusinessCat billing/billing_profiles.json"
-        self.__load_billing_profiles()
-        self.displayed_profile = IntVar()
-        self.displayed_profile.set(0)
-        self.untouchable_keys = ["id", "tag"]
-        self.default_profile = {
-            "threshold_hours": 8.0,
-            "add_over_threshold": True,
-            "time_to_add": 0.0,
-            "pattern": [],
-            "pricelist": [
-                {
-                    "tag": "OR",
-                    "name": "ore_ordinarie",
-                    "price": 0.0
-                },
-                {
-                    "tag": "ST",
-                    "name": "ore_straordinarie",
-                    "price": 0.0
-                },
-                {
-                    "tag": "MN",
-                    "name": "ore_notturne",
-                    "price": 0.0
-                },
-                {
-                    "tag": "OF",
-                    "name": "ore_festive",
-                    "price": 0.0
-                },
-                {
-                    "tag": "SF",
-                    "name": "ore_straordinarie_festive",
-                    "price": 0.0
-                },
-                {
-                    "tag": "SN",
-                    "name": "ore_straordinarie_notturne",
-                    "price": 0.0
-                },
-                {
-                    "tag": "FN",
-                    "name": "ore_festive_notturne",
-                    "price": 0.0
-                }
-            ],
-            "id": "",
-            "name":""
-        }
-        self.default_pattern_object = {
-            "perform": "/",
-            "amount": "",
-            "keep": "1"
-        }
+
+        self.displayed_ = IntVar()
+        self.displayed_.set(0)
 
 
         # define back button
@@ -1737,12 +1880,10 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
         # define add/rmv buttons
         self.add_lbl = Label(self.ADD_RMV_FRAME, text="+", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_green)
-        self.add_lbl.bind("<Button-1>", lambda e: self.add_profile())
-        self.apply_balloon_to_widget(self.add_lbl, "Aggiungi un nuovo Job")
+        self.add_lbl.bind("<Button-1>", lambda e: self.add_())
         self.add_lbl.pack(side="right", padx=5)
         self.rmv_lbl = Label(self.ADD_RMV_FRAME, text="-", width=2,height=1, font=("Calibri",20,"bold"), bg=appLib.color_grey, fg=appLib.color_red)
-        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_profile())
-        self.apply_balloon_to_widget(self.rmv_lbl, "Rimuovi il Job corrente")
+        self.rmv_lbl.bind("<Button-1>", lambda e: self.remove_())
         self.rmv_lbl.pack(side="right", padx=5)
 
         # define navbar
@@ -1753,7 +1894,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         self.NAV_FRAME.grid_propagate(0)
 
         # define previous button
-        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_profile)
+        self.previous_button = Button(self.NAV_FRAME, text="<", font=("bold"), width=2, height=1, command=self.previous_)
         self.previous_button.grid(row=0, column=0, padx=(0,navbar_padx), sticky="w")
 
         # define info label
@@ -1761,7 +1902,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         self.info_label.grid(row=0, column=1, padx=navbar_padx, sticky="nsew")
 
         # define next button
-        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_profile)
+        self.next_button = Button(self.NAV_FRAME, text=">", font=("bold"), width=2, height=1, command=self.next_)
         self.next_button.grid(row=0, column=2, padx=(navbar_padx,0), sticky="e")
 
         #resize grid
@@ -1774,41 +1915,20 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
 
     """ PRIVATE METHODS """
-    def __load_billing_profiles(self):
-        with open(self.__billing_profiles_path, "r") as f:
-            self.billing_profiles = json.load(f)
-
     def __parse_data(self):
         keys = []
         values = []
 
-        exclude = ["pattern", "pricelist"]
-
         for child in self.JSON_CONTAINER.winfo_children():
             if isinstance(child, Label):
-                if child.cget("text") not in exclude:
+                if child.cget("text") != "pricelist":
                     keys.append(child.cget("text"))
             elif isinstance(child, Entry):
                 values.append(child.get().strip())
         new_profile = dict(zip(keys, values))
 
-        for val in exclude:
-            new_profile[val] = []
-
         # parse pattern and pricelist
-        for child in self.PATTERN_FRAME.winfo_children():
-            if isinstance(child, Frame):
-                pattern_keys = []
-                pattern_values = []
-                for subchild in child.winfo_children():
-                    if isinstance(subchild, Label):
-                        if subchild.cget("text") in ["-", "+"]: continue
-                        pattern_keys.append(subchild.cget("text"))
-                    elif isinstance(subchild, Entry):
-                        pattern_values.append(subchild.get().strip())
-                if pattern_keys:
-                    new_profile["pattern"].append(dict(zip(pattern_keys, pattern_values)))
-
+        new_profile["pricelist"] = []
         for child in self.PRICELIST_FRAME.winfo_children():
             if isinstance(child, Frame):
                 pricelist_keys = []
@@ -1848,50 +1968,36 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
     def __save_data(self, new_data=None):
         """ save current displayed job """
-        if new_data and new_data != self.billing_profiles[self.displayed_profile.get()]:
+        if new_data and new_data != self.Biller.billing_profiles[self.displayed_.get()]:
             save = messagebox.askyesno("Salvare?", "I dati di questo profilo sono stati modificati\nsi desidera salvare i cambiamenti?")
             if save:
-                self.billing_profiles[self.displayed_profile.get()] = new_data
+                self.Biller.billing_profiles[self.displayed_.get()] = new_data
 
-        with open(self.__billing_profiles_path, "w") as f:
-            f.write(json.dumps(self.billing_profiles, indent=4))
-
-    def __get_new_id(self):
-        id_lenght = 4
-
-        check_high = 0
-        for entry in self.billing_profiles:
-            if int(entry["id"]) > check_high:
-                check_high = int(entry["id"])
-        check_high = str(check_high + 1) # increment 1 from the highest id found among all jobs
-
-        new_id = "0"*(id_lenght-len(check_high)) + check_high
-        return new_id
+        with open(self.Biller._billing_profiles_path, "w") as f:
+            f.write(json.dumps(self.Biller.billing_profiles, indent=4))
 
 
     """ PUBLIC METHODS """
-    def next_profile(self):
-
+    def next_(self):
         data = self.__parse_data()
         self.__save_data(data)
 
-        max_lenght = len(self.billing_profiles) -1 if len(self.billing_profiles) > 0 else 0
-        if self.displayed_profile.get() < max_lenght:
-            self.displayed_profile.set(self.displayed_profile.get() + 1)
+        max_lenght = len(self.Biller.billing_profiles) -1 if len(self.Biller.billing_profiles) > 0 else 0
+        if self.displayed_.get() < max_lenght:
+            self.displayed_.set(self.displayed_.get() + 1)
         else:
-            self.displayed_profile.set(0)
+            self.displayed_.set(0)
 
         self.display_data()
 
-    def previous_profile(self):
-
+    def previous_(self):
         self.__save_data(self.__parse_data())
 
-        max_lenght = len(self.billing_profiles) -1 if len(self.billing_profiles) > 0 else 0
-        if self.displayed_profile.get() > 0:
-            self.displayed_profile.set(self.displayed_profile.get() - 1)
+        max_lenght = len(self.Biller.billing_profiles) -1 if len(self.Biller.billing_profiles) > 0 else 0
+        if self.displayed_.get() > 0:
+            self.displayed_.set(self.displayed_.get() - 1)
         else:
-            self.displayed_profile.set(max_lenght)
+            self.displayed_.set(max_lenght)
 
         self.display_data()
 
@@ -1907,7 +2013,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         default_pady = 5
         label_size = 60
         txt_box_size = 40
-        profile_name = ""
+        name_ = ""
 
         # set new container
         self.JSON_CONTAINER = Frame(self.CANVAS, width=400, bg=appLib.color_light_orange)
@@ -1915,18 +2021,17 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         self.JSON_CONTAINER.grid_columnconfigure(0, minsize=label_size, weight=1)
         self.JSON_CONTAINER.grid_columnconfigure(1, minsize=txt_box_size, weight=3)
 
-        # senza lavori da mostrare
-        if not self.billing_profiles:
+        # senza profili da mostrare
+        if not self.Biller.billing_profiles:
             no_jobs_lbl = Label(self.JSON_CONTAINER, text="NON CI SONO PROFILI DA MOSTRARE", font=("Calibri", 12), bg=appLib.color_light_orange)
             no_jobs_lbl.pack(anchor="center", ipady=100)
 
-        # iterate throught jobs and create new grid in the new container
         try:
             i = 0
-            for k,v in self.billing_profiles[self.displayed_profile.get()].items():
+            for k,v in self.Biller.billing_profiles[self.displayed_.get()].items():
 
                 if k == "name":
-                    profile_name = v
+                    name_ = v
 
                 key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
                 key.grid(row=i, column=0, pady=default_pady, padx=padx, sticky="nsew")
@@ -1938,7 +2043,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
                     value.insert(0, v)
 
                     # conditionally disable fields
-                    if k in self.untouchable_keys:
+                    if k in self.Biller.untouchable_keys:
                         value.config(state=DISABLED)
 
                     i += 1
@@ -1949,52 +2054,8 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
                     key.grid(row=i, column=0, pady=default_pady, padx=padx, sticky="nsew")
                     i1 = 1
 
-                    if k == "pattern":
-                        self.PATTERN_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=250, height=120, bg=appLib.color_red)
-                        self.PATTERN_FRAME_MASTER.grid(row=i, column=1, padx=padx, pady=default_pady, sticky="nsw")
-                        if not v:
-                            self.PATTERN_FRAME_MASTER.grid(sticky="w")
-                        self.PATTERN_FRAME_MASTER.pack_propagate(0)
-
-                        self.PATTERN_CANVAS = Canvas(self.PATTERN_FRAME_MASTER, bg=appLib.color_orange)
-                        self.PATTERN_CANVAS.pack(side="left", fill="both", expand=True)
-                        self.PATTERN_CANVAS.bind("<Configure>", lambda e: self.PATTERN_CANVAS.configure(scrollregion=self.PATTERN_CANVAS.bbox("all")))
-
-                        self.PATTERN_FRAME = Frame(self.PATTERN_FRAME_MASTER, bg=appLib.color_orange)
-
-                        buttons_frame = Frame(self.PATTERN_FRAME, bg=appLib.color_orange)
-                        buttons_frame.pack()
-                        self.ADD_PATTERN_BTN = Label(buttons_frame, text="+", width=10, bg=appLib.color_grey, fg=appLib.color_green)
-                        self.ADD_PATTERN_BTN.bind("<Button-1>", lambda e: self.add_pattern())
-                        self.ADD_PATTERN_BTN.pack(side="left", anchor="center", padx=padx)
-                        self.RMV_PATTERN_BTN = Label(buttons_frame, text="-", width=10, bg=appLib.color_grey, fg=appLib.color_red)
-                        self.RMV_PATTERN_BTN.bind("<Button-1>", lambda e: self.rmv_pattern())
-                        self.RMV_PATTERN_BTN.pack(side="right", anchor="center", padx=padx)
-
-                        for index, value in enumerate(v):
-                            subframe = Frame(self.PATTERN_FRAME, bg=appLib.default_background)
-                            subframe.pack(anchor="w", pady=default_pady, padx=padx)
-
-                            i2 = 0
-                            for k1, v1 in value.items():
-                                Label(subframe, text=k1, bg=appLib.default_background).grid(row=i2, column=0, pady=default_pady, padx=padx, sticky="w")
-                                value = Entry(subframe, bg=appLib.default_background)
-                                value.grid(row=i2, column=1, pady=default_pady, padx=padx, sticky="nsew")
-                                value.insert(0, v1)
-                                # disable field conditionally
-                                if k1 in self.untouchable_keys:
-                                    value.configure(state="disabled")
-                                i2 += 1
-                            i1 += 1
-                        i += 1
-
-                        self.PATTERN_YSCROLL = Scrollbar(self.PATTERN_CANVAS, orient="vertical", width=18, command=self.PATTERN_CANVAS.yview)
-                        self.PATTERN_YSCROLL.pack(side="right", fill="y", expand=False)
-                        self.PATTERN_CANVAS.configure(yscrollcommand=self.PATTERN_YSCROLL.set)
-                        self.PATTERN_CANVAS.create_window((0, 0), width=230, window=self.PATTERN_FRAME, anchor="nw")
-
-                    elif k == "pricelist":
-                        self.PRICELIST_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=250, height=120, bg=appLib.color_orange)
+                    if k == "pricelist":
+                        self.PRICELIST_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=300, height=240, bg=appLib.color_orange)
                         self.PRICELIST_FRAME_MASTER.grid(row=i, column=1, padx=padx, pady=default_pady, sticky="nsw")
                         if not v:
                             self.PRICELIST_FRAME_MASTER.grid(sticky="w")
@@ -2008,7 +2069,7 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
 
                         for index, value in enumerate(v):
                             subframe = Frame(self.PRICELIST_FRAME, bg=appLib.default_background)
-                            subframe.pack(anchor="w", pady=default_pady, padx=padx)
+                            subframe.pack(anchor="w", fill="x", pady=default_pady, padx=padx)
 
                             i2 = 0
                             for k1, v1 in value.items():
@@ -2017,16 +2078,19 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
                                 value.grid(row=i2, column=1, pady=default_pady, padx=padx, sticky="nsew")
                                 value.insert(0, v1)
                                 # disable field conditionally
-                                if k1 in self.untouchable_keys:
+                                if k1 in self.Biller.untouchable_keys:
                                     value.configure(state="disabled")
                                 i2 += 1
+
+                            subframe.grid_columnconfigure(1, weight=1)
+
                             i1 += 1
                         i += 1
 
                         self.PRICELIST_YSCROLL = Scrollbar(self.PRICELIST_CANVAS, orient="vertical", width=18, command=self.PRICELIST_CANVAS.yview)
                         self.PRICELIST_YSCROLL.pack(side="right", fill="y", expand=False)
                         self.PRICELIST_CANVAS.configure(yscrollcommand=self.PRICELIST_YSCROLL.set)
-                        self.PRICELIST_CANVAS.create_window((0, 0), width=230, window=self.PRICELIST_FRAME, anchor="nw")
+                        self.PRICELIST_CANVAS.create_window((0, 0), width=280, window=self.PRICELIST_FRAME, anchor="nw")
 
 
             # define displayed data scrollbar
@@ -2046,43 +2110,27 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
             pass
 
         # change label
-        self.info_label.config(text=f"{profile_name}")
+        self.info_label.config(text=f"{name_}")
 
-    def add_profile(self):
+    def add_(self):
         create_new = messagebox.askyesno("", "Vuoi creare un nuovo profilo?")
         if create_new:
-            new_profile = copy.deepcopy(self.default_profile)
-            new_profile["id"] = self.__get_new_id()
-            self.billing_profiles.append(new_profile)
-            go_to_last = messagebox.askyesno("", "Il nuovo profilo è stato inizializzato, vuoi visualizzarlo?")
-            self.__save_data(self.__parse_data())  # save current
+            success = self.Biller._add_billing_profile()
+            if success:
+                go_to_last = messagebox.askyesno("", "Il nuovo profilo è stato inizializzato, vuoi visualizzarlo?")
+                self.__save_data(self.__parse_data())  # save current
 
-            if go_to_last:
-                self.displayed_profile.set(len(self.billing_profiles)-1) # set destination to the new one
-                self.display_data() # display destination
-
-    def remove_profile(self):
-        confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo profilo?")
-        if confirm_delete:
-            self.billing_profiles.pop(self.displayed_profile.get())
-            self.displayed_profile.set(self.displayed_profile.get() - 1)  # set destination to the previous one
-            self.__save_data()  # save current
+                if go_to_last:
+                    self.displayed_.set(len(self.Biller.billing_profiles)-1) # set destination to the new one
             self.display_data() # display destination
 
-    def add_pattern(self):
-        create_new = messagebox.askyesno("", "Aggiungere un pattern?")
-        if create_new:
-            new_pattern = copy.deepcopy(self.default_pattern_object)
-            self.billing_profiles[self.displayed_profile.get()]["pattern"].append(new_pattern)
-            #self.__save_data(self.__parse_data())  # save current
+    def remove_(self):
+        confirm_delete = messagebox.askyesno("", "Vuoi davvero eliminare questo profilo?")
+        if confirm_delete:
+            self.Biller._rmv_billing_profile(self.displayed_.get())
+            self.displayed_.set(self.displayed_.get() - 1)
+            self.__save_data()
             self.display_data()
-
-    def rmv_pattern(self):
-        rmv_pattern = messagebox.askyesno("", "Rimuovere l'ultimo pattern?")
-        if rmv_pattern:
-            if len(self.billing_profiles[self.displayed_profile.get()]["pattern"]) > 0:
-                self.billing_profiles[self.displayed_profile.get()]["pattern"].pop()
-                self.display_data()
 
     # override
     def open_new_window(self, master, new_window):
@@ -2094,10 +2142,11 @@ class Edit_BillingProfiles_Window(Custom_Toplevel):
         new = new_window(master)
         new.prior_window = type(self)
 
-class Billing_Window(Custom_Toplevel):
+
+class Billing_Window(Billing_template):
     def __init__(self, master=None):
         self.width = 500
-        self.height = 450 # initial resize 650x700
+        self.height = 450
         super().__init__(master, self.width, self.height)
 
         self.master_ = master # keep refer to master
