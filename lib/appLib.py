@@ -16,7 +16,8 @@ import pandas as pd
 import numpy as np
 
 from openpyxl.utils.cell import get_column_letter
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, Alignment
+from openpyxl import formatting
 from threading import Thread
 from operator import itemgetter
 from googleapiclient.http import MediaIoBaseDownload
@@ -917,6 +918,7 @@ class PaycheckController():
 class BillingManager():
     def __init__(self, bill_name="Fattura", month=datetime.datetime.now().month, year=datetime.datetime.now().year):
         self.bill_name = f"{bill_name}.xlsx"
+        self.model_name = "Modello fatturazione.xlsx"
         self.badges_path = None # badges_path
         self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
         self.name_cell = "B5" # in che cella del badge_path si trova il nome
@@ -1441,6 +1443,110 @@ class BillingManager():
             self.billing_profiles.pop(pos)
         return True
 
+    def _create_model(self):
+        sh_name = "Report Fatturazione"
+        empty_rows_per_worker = 5
+        total_content = self._parse_badges()
+        total_content = self._parse_days(total_content)
+
+        totals = self.parse_total(total_content)
+        total_workers_hours = totals[0]
+        df = pd.DataFrame.from_dict(total_workers_hours).T
+
+        # sort alphabetically rows and columns, renaming index
+        df = df.sort_index()
+        df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
+
+
+        # adding "total" row and "total" column
+        df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
+        df['TOTALI'] = df.sum(axis=1, numeric_only=True)
+
+        user_columns = [
+            "cliente",
+            "profilo",
+            "mansione",
+            "ore_ordinarie",
+            "ore_straordinarie",
+            "ore_notturne",
+            "ore_festive",
+            "ore_straordinarie_festive",
+            "ore_straordinarie_notturne",
+            "ore_festive_notturne",
+            "totale"
+        ]
+        df_utente = pd.DataFrame(columns=user_columns)
+        df = pd.concat([df,df_utente], axis=1)
+        df.fillna("", inplace=True)
+
+        df.index.rename("LAVORATORI", inplace=True)
+
+        # generating excel with df data
+        with pd.ExcelWriter(self.model_name, mode="w") as writer:
+            df.to_excel(writer, sheet_name=sh_name, na_rep=0, float_format="%.2f")
+            ws = writer.sheets[sh_name]
+            footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
+            error_color = PatternFill(start_color=color_red[1:], end_color=color_red[1:], fill_type="solid")
+
+            # style last rows
+            last_rows_to_style = 1
+            added_rows = 1 # fixed, don't touch
+            for row in range(last_rows_to_style, 0, -1):
+                for cell in ws[f"{(len(df) + 1 + added_rows) - row}:{(len(df) + 1 + added_rows) - row}"]:
+                    cell.font = openpyxl.styles.Font(bold=True)
+                    cell.fill = footer_color
+
+            # adding blank rows
+            ws = writer.sheets[sh_name]
+            refer_ws = copy.deepcopy(ws)
+            check_name = None
+            for row in refer_ws.iter_rows():
+                refer_name = row[0].value
+                if refer_name and refer_name.upper() != refer_name and refer_name != check_name:
+                    for index, row_ in enumerate(ws.iter_rows()):
+                        if row_[0].value == refer_name:
+                            ws.insert_rows(index+2, empty_rows_per_worker)
+                            check_name = refer_name
+                            break
+
+            # set color, font weight, alignment of total column
+            for cell in ws[f"I1:I{ws.max_row}"]:
+                cell[0].font = openpyxl.styles.Font(bold=True)
+                cell[0].fill = footer_color
+                cell[0].alignment = Alignment(horizontal="center")
+                cell[0].number_format = '#,##0.00'
+
+            # adding formulas
+            for index, row in enumerate(ws.iter_rows()):
+                if index != 0 and index != 1 and index != ws.max_row:
+                    row_total_formula = f"=SUM(M{index}:S{index})"
+                    ws[f"T{index}"] = row_total_formula
+                    ws[f"T{index}"].number_format = '#,##0.00'
+
+                if row[0].value and row[0].value.upper() != row[0].value:
+                    wtfi = index + (empty_rows_per_worker+1) # worker total formula index
+                    worker_total_formula = f"=SUM(T{index+1}:T{wtfi})-I{index+1}"
+                    ws[f"U{wtfi}"] = worker_total_formula
+                    ws[f"U{wtfi}"].number_format = '#,##0.00'
+
+            # adjust column width
+            for index, col in enumerate(ws.iter_cols()):
+                if index == 0:
+                    ws.column_dimensions[get_column_letter(index + 1)].width = 20
+                elif index >=2 and index <=9:
+                    ws.column_dimensions[get_column_letter(index+1)].width= 8
+                else:
+                    ws.column_dimensions[get_column_letter(index + 1)].width = 15
+
+            # freeze first column and row
+            ws.freeze_panes = ws["B2"]
+
+            # add conditional formatting
+            ws.conditional_formatting.add(f'U2:U{ws.max_row}', formatting.rule.CellIsRule(operator='notEqual', formula=[0], fill=error_color))
+
+
+
+
 
     """    PUBLIC METHODS    """
     def get_all_badges_names(self):
@@ -1481,19 +1587,6 @@ class BillingManager():
         if not billing_profile_id and job_id:
             raise Exception(f"Billing Profile for Job {job_id} non trovato")
         return billing_profile_id
-
-    # probably will be deleted
-    def parse_jobs_to_profiles(self, workers_jobs):
-        """ creating a dict from parsing every worker day to its billing profile and returning it """
-        workers_billing_profiles = {}
-        for w in workers_jobs:
-            workers_billing_profiles[w] = {}
-            for day in workers_jobs[w]:
-                if not workers_jobs[w][day]:
-                    workers_billing_profiles[w][day] = ""
-                else:
-                    workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
-        return workers_billing_profiles
 
     def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
         billed_hours = {}
@@ -1628,18 +1721,18 @@ class BillingManager():
 
         return (new_data, total)
 
-    def create_Excel(self, content, total_billing, transposed=True, bill_by_job=False):
+    def create_Excel(self, data, total_billing, transposed=True, bill_by_job=False):
 
-        for job in content:
+        for job in data:
 
-            total_ = content[job].pop("job_total") if bill_by_job else total_billing
+            total_ = data[job].pop("job_total") if bill_by_job else total_billing
 
             # adjust to billing type
             if bill_by_job:
-                df = pd.DataFrame.from_dict(content[job])
+                df = pd.DataFrame.from_dict(data[job])
             else:
                 job = "Report Fatturazione"
-                df = pd.DataFrame.from_dict(content)
+                df = pd.DataFrame.from_dict(data)
 
             if transposed:
                 df = df.T
@@ -1649,35 +1742,48 @@ class BillingManager():
             df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
 
             # add totals (rows total/column total)
-            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0)
-            df.loc[">> € DA FATTURARE <<"] = total_
-            df['TOTALI'] = df.sum(axis=1)
+            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
+            if bill_by_job:
+                df.loc[">> € DA FATTURARE <<"] = total_
+            df['TOTALI'] = df.sum(axis=1, numeric_only=True)
 
             # polish
             df.index.rename("LAVORATORI", inplace=True)
             df.replace(0, np.nan, inplace=True)
 
             #generating excel with df data
-            if os.path.exists(self.bill_name):
-                mode = "a"
-            else:
-                mode = "w"
+            mode = "a" if os.path.exists(self.bill_name) else "w"
             with pd.ExcelWriter(self.bill_name, mode=mode) as writer:
-                df.to_excel(writer, sheet_name=job, na_rep="", float_format="%.2f")
+                df.to_excel(writer, sheet_name=job, na_rep=0, float_format="%.2f")
                 ws = writer.sheets[job]
                 footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
 
-                # style total hours
-                for cell in ws[f"{len(df)}:{len(df)}"]:
-                    cell.font = openpyxl.styles.Font(bold=True)
-                    cell.fill = footer_color
+                # color last rows
+                last_rows_to_style = 2 if bill_by_job else 1
+                added_rows = 2 if bill_by_job else 1
+                for row in range(last_rows_to_style, 0, -1):
+                    for cell in ws[f"{(len(df)+1+added_rows)-row}:{(len(df)+1+added_rows)-row}"]:
+                        cell.font = openpyxl.styles.Font(bold=True)
+                        cell.fill = footer_color
 
-                # style billing totals
-                for cell in ws[f"{len(df)+1}:{len(df)+1}"]:
-                    cell.number_format = '#,##0.00€'
-                    cell.font = openpyxl.styles.Font(bold=True)
-                    cell.fill = footer_color
+                        if bill_by_job and row == last_rows_to_style:
+                            cell.number_format = '#,##0.00€'
 
             # if single sheet result break
             if not bill_by_job:
                 break
+
+
+
+    # probably will be deleted
+    def parse_jobs_to_profiles(self, workers_jobs):
+        """ creating a dict from parsing every worker day to its billing profile and returning it """
+        workers_billing_profiles = {}
+        for w in workers_jobs:
+            workers_billing_profiles[w] = {}
+            for day in workers_jobs[w]:
+                if not workers_jobs[w][day]:
+                    workers_billing_profiles[w][day] = ""
+                else:
+                    workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
+        return workers_billing_profiles

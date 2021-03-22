@@ -1389,6 +1389,11 @@ class Billing_Landing_Window(Billing_template):
         self.config(bg=appLib.default_background)
         self.title(self.title().split("-")[:1][0] + " - " + "Billing Manager")
 
+        self.choosen_month = IntVar()
+        self.choosen_year = IntVar()
+        self.choosen_month.set(0)
+        self.choosen_year.set(0)
+
 
         # define back button
         self.back_button = Button(self, text="<<", width=2, height=1, command= lambda:self.open_new_window(master, Home_Window))
@@ -1408,7 +1413,7 @@ class Billing_Landing_Window(Billing_template):
         self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Profili", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Profiles_Window))
         self.billing_profiles_button.grid(column=2, row=0, pady=5, padx=5)
 
-        self.create_model_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA MODELLO", font=("Calibri", 10, "bold"))
+        self.create_model_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA MODELLO", font=("Calibri", 10, "bold"), command=self.__create_model)
         self.create_model_btn.grid(column=0, row=2, pady=self.margin, padx=5)
         self.bill_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"))
         self.bill_btn.grid(column=2, row=2, pady=self.margin, padx=5)
@@ -1419,6 +1424,69 @@ class Billing_Landing_Window(Billing_template):
             self.BUTTONS_FRAME.grid_columnconfigure(col, weight=1)
         for row in range(size[1]):
             self.BUTTONS_FRAME.grid_rowconfigure(row, minsize=self.margin, weight=1)
+
+
+    """     PRIVATE METHODS     """
+    def __create_model(self):
+        window = Toplevel(self, bg=appLib.default_background)
+        window.resizable(height=False, width=True)
+        window.title("Inserimento Dati")
+        window.iconbitmap(appLib.icon_path)
+        pady = 10
+        padx = 10
+
+        # packing stuff in window
+        Button(window, text="File Cartellini", command=lambda: set_badges_path(self)).grid(row=0, column=0, pady=pady, padx=padx)
+        badges_entry = Entry(window, state="disabled", disabledbackground=appLib.color_light_orange)
+        badges_entry.grid(row=0, column=1, pady=pady, padx=padx, sticky="nsew")
+
+        month_label = Label(window, text="Mese", bg=appLib.default_background)
+        month_label.grid(row=1, column=0, padx=padx, pady=pady)
+        month_combobox = ttk.Combobox(window, state="readonly")
+        month_combobox['values'] = [x for x in range(1,13)]
+        month_combobox.grid(row=1, column=1, padx=padx, pady=pady, sticky="nsew")
+        month_combobox.bind("<<ComboboxSelected>>", lambda e: self.choosen_month.set(int(month_combobox.get())))
+
+        year_label = Label(window, text="Anno", bg=appLib.default_background)
+        year_label.grid(row=2, column=0, padx=padx, pady=pady)
+        current_year = datetime.datetime.now().year
+        year_combobox = ttk.Combobox(window, state="readonly")
+        year_combobox['values'] = [x for x in range(current_year, current_year+3)]
+        year_combobox.grid(row=2, column=1, padx=padx, pady=pady, sticky="nsew")
+        year_combobox.bind("<<ComboboxSelected>>", lambda e: self.choosen_year.set(int(year_combobox.get())))
+
+        # setting view
+        window.grid_columnconfigure(0, minsize=100)
+        window.grid_columnconfigure(1, minsize=250, weight=1)
+
+        Button(window, text="Genera modello", command=lambda:generate_model(self)).grid(row=3, column=0, columnspan=2, pady=pady, padx=padx, sticky="nsew")
+
+        def set_badges_path(self):
+            filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Seleziona i Cartellini", filetype=[("Excel File", "*.xlsx*"), ("Excel File", "*.xls*")])
+            if not filename:
+                messagebox.showerror("ERRORE", "Per continuare la generazione del modello è necessario un file excel contenente i cartellini")
+                return
+            badges_entry.configure(state="normal")
+            badges_entry.insert(0, filename)
+            badges_entry.configure(state="disabled")
+            self.Biller._set_badges_path(filename)
+
+        def generate_model(self):
+            try:
+                if self.Biller.badges_path and self.choosen_month.get() != 0 and self.choosen_year.get() != 0:
+                    self.Biller._set_billing_time(self.choosen_month.get(), self.choosen_year.get())
+                    self.Biller._create_model()
+                    messagebox.showinfo("Successo", "Modello generato con successo!")
+                    window.destroy()
+                else:
+                    messagebox.showerror("ERRORE", "Dati mancanti")
+            except Exception as e:
+                messagebox.showerror("ERRORE", f"{e}")
+
+
+
+
+
 
 class Edit_Jobs_Window(Billing_template):
     def __init__(self, master=None):
@@ -2141,6 +2209,9 @@ class Edit_Profiles_Window(Billing_template):
         self.destroy()
         new = new_window(master)
         new.prior_window = type(self)
+
+
+
 
 
 class Billing_Window(Billing_template):
