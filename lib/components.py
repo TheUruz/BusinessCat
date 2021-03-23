@@ -1495,10 +1495,6 @@ class Billing_Landing_Window(Billing_template):
         window.lift()
         window.grab_set()
 
-
-
-
-
 class Edit_Jobs_Window(Billing_template):
     def __init__(self, master=None):
         self.width = 500

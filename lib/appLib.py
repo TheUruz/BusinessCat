@@ -1213,14 +1213,14 @@ class BillingManager():
 
 
     """     PROTECTED METHODS   """
-    # must be called once before billing
+    # must be called once before billing/creating model
     def _set_badges_path(self, badges_path):
         if not os.path.exists(badges_path):
             raise ValueError("ERROR: Cannot find badges path")
         self.badges_path = badges_path
         print("** badges_path caricato")
 
-    # must be called once before billing
+    # must be called once before billing/creating model
     def _set_billing_time(self, month, year):
         self.billing_year = int(year)
         self.billing_month = int(month)
@@ -1452,6 +1452,7 @@ class BillingManager():
         empty_rows_per_worker = 5
         footer_color = PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
         error_color = PatternFill(start_color=color_red[1:], end_color=color_red[1:], fill_type="solid")
+        separator = Border(top=Side(border_style='thin', color="000000"))
         combobox_background = PatternFill(start_color="cce6ff", end_color="cce6ff", fill_type="solid")
         combobox_border = Border(bottom=Side(border_style='thin', color='e6f3ff'))
         combobox_font = openpyxl.styles.Font(bold=True, color="e67300")
@@ -1511,7 +1512,7 @@ class BillingManager():
             ws = writer.sheets[sh_name]
             refer_ws = copy.deepcopy(ws)
             check_name = None
-            for row in refer_ws.iter_rows():
+            for row in refer_ws.iter_rows(max_row=ws.max_row):
                 refer_name = row[0].value
                 if refer_name and refer_name.upper() != refer_name and refer_name != check_name:
                     for index, row_ in enumerate(ws.iter_rows()):
@@ -1570,6 +1571,19 @@ class BillingManager():
                     cell[0].fill = combobox_background
                     cell[0].alignment = Alignment(horizontal="left")
                     cell[0].border = combobox_border
+
+            # set border between workers
+            for row in ws.iter_rows(max_row=ws.max_row):
+                if row[0].value and row[0].value.upper() != row[0].value:
+                    for cell in row:
+                        # if already styled keep bottom style
+                        if cell.border.bottom.color is not None or cell.border.bottom.style is not None:
+                            temp_ = copy.deepcopy(separator)
+                            temp_.bottom.color = cell.border.bottom.color
+                            temp_.bottom.style = cell.border.bottom.style
+                            cell.border = temp_
+                            continue
+                        cell.border = separator
 
             # hide columns
             ws.column_dimensions.group(COLUMNS_TO_HIDE["first"], COLUMNS_TO_HIDE["last"], outline_level=1, hidden=True)
