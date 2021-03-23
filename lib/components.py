@@ -44,6 +44,8 @@ class Custom_Toplevel(Toplevel):
         self.protocol("WM_DELETE_WINDOW", lambda: self._close(master))
         self.prior_window = None
 
+        self.lift()
+
     def open_new_window(self, master, new_window):
         """ use this method to pass from one window to another"""
         self.destroy()
@@ -78,6 +80,8 @@ class Billing_template(Custom_Toplevel):
         self.info_wraplength = 200
 
         self.Biller = appLib.BillingManager()
+
+        self.lift()
 
 
 
@@ -1413,9 +1417,9 @@ class Billing_Landing_Window(Billing_template):
         self.billing_profiles_button = Button(self.BUTTONS_FRAME, width=15, text="Profili", font=("Calibri", 10, "bold"), command=lambda:self.open_new_window(master, Edit_Profiles_Window))
         self.billing_profiles_button.grid(column=2, row=0, pady=5, padx=5)
 
-        self.create_model_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA MODELLO", font=("Calibri", 10, "bold"), command=self.__create_model)
+        self.create_model_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA MODELLO", font=("Calibri", 10, "bold"), command=self.__insert_model_data)
         self.create_model_btn.grid(column=0, row=2, pady=self.margin, padx=5)
-        self.bill_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"))
+        self.bill_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"), state="disabled")
         self.bill_btn.grid(column=2, row=2, pady=self.margin, padx=5)
 
         #resize grid
@@ -1427,30 +1431,35 @@ class Billing_Landing_Window(Billing_template):
 
 
     """     PRIVATE METHODS     """
-    def __create_model(self):
-        window = Toplevel(self, bg=appLib.default_background)
+    def __insert_model_data(self):
+        window = Toplevel(self, bg=appLib.color_orange)
         window.resizable(height=False, width=True)
         window.title("Inserimento Dati")
         window.iconbitmap(appLib.icon_path)
+
+        x = self.winfo_x() + 80
+        y = self.winfo_y() + 25
+        window.geometry(f"+{x}+{y}")
+
         pady = 10
         padx = 10
 
         # packing stuff in window
-        Button(window, text="File Cartellini", command=lambda: set_badges_path(self)).grid(row=0, column=0, pady=pady, padx=padx)
+        Button(window, text="File Cartellini", bg=appLib.default_background, command=lambda: set_badges_path(self)).grid(row=0, column=0, pady=pady, padx=padx)
         badges_entry = Entry(window, state="disabled", disabledbackground=appLib.color_light_orange)
         badges_entry.grid(row=0, column=1, pady=pady, padx=padx, sticky="nsew")
 
-        month_label = Label(window, text="Mese", bg=appLib.default_background)
+        month_label = Label(window, text="Mese", bg=appLib.color_orange)
         month_label.grid(row=1, column=0, padx=padx, pady=pady)
-        month_combobox = ttk.Combobox(window, state="readonly")
+        month_combobox = ttk.Combobox(window, justify="center", state="readonly")
         month_combobox['values'] = [x for x in range(1,13)]
         month_combobox.grid(row=1, column=1, padx=padx, pady=pady, sticky="nsew")
         month_combobox.bind("<<ComboboxSelected>>", lambda e: self.choosen_month.set(int(month_combobox.get())))
 
-        year_label = Label(window, text="Anno", bg=appLib.default_background)
+        year_label = Label(window, text="Anno", bg=appLib.color_orange)
         year_label.grid(row=2, column=0, padx=padx, pady=pady)
         current_year = datetime.datetime.now().year
-        year_combobox = ttk.Combobox(window, state="readonly")
+        year_combobox = ttk.Combobox(window, justify="center", state="readonly")
         year_combobox['values'] = [x for x in range(current_year, current_year+3)]
         year_combobox.grid(row=2, column=1, padx=padx, pady=pady, sticky="nsew")
         year_combobox.bind("<<ComboboxSelected>>", lambda e: self.choosen_year.set(int(year_combobox.get())))
@@ -1459,7 +1468,7 @@ class Billing_Landing_Window(Billing_template):
         window.grid_columnconfigure(0, minsize=100)
         window.grid_columnconfigure(1, minsize=250, weight=1)
 
-        Button(window, text="Genera modello", command=lambda:generate_model(self)).grid(row=3, column=0, columnspan=2, pady=pady, padx=padx, sticky="nsew")
+        Button(window, text="Genera modello", bg=appLib.default_background, command=lambda:generate_model(self)).grid(row=3, column=0, columnspan=2, pady=pady, padx=padx, sticky="nsew")
 
         def set_badges_path(self):
             filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Seleziona i Cartellini", filetype=[("Excel File", "*.xlsx*"), ("Excel File", "*.xls*")])
@@ -1483,6 +1492,8 @@ class Billing_Landing_Window(Billing_template):
             except Exception as e:
                 messagebox.showerror("ERRORE", f"{e}")
 
+        window.lift()
+        window.grab_set()
 
 
 
