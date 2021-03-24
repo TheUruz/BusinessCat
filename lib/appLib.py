@@ -1449,7 +1449,7 @@ class BillingManager():
 
     def _create_model(self):
         sh_name = "Report Fatturazione"
-        empty_rows_per_worker = 5
+        empty_rows_per_worker = 10
         footer_color = PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
         error_color = PatternFill(start_color=color_red[1:], end_color=color_red[1:], fill_type="solid")
         separator = Border(top=Side(border_style='thin', color="000000"))
@@ -1556,8 +1556,8 @@ class BillingManager():
             # adding comboboxes
             validation_dict = {
                 "J" : ",".join([f"{x['id']} {x['name']}" for x in self.clients]),
-                "K" : ",".join([f"{x['id']} {x['name']}" for x in self.jobs]),
-                "L" : ",".join([f"{x['id']} {x['name']}" for x in self.billing_profiles])
+                "K" : ",".join([f"{x['id']} {x['name']}" for x in self.billing_profiles]),
+                "L" : ",".join([f"{x['id']} {x['name']}" for x in self.jobs])
             }
             for col in COLUMNS_TO_STYLE:
                 try:
@@ -1593,7 +1593,6 @@ class BillingManager():
 
             # add conditional formatting
             ws.conditional_formatting.add(f'U2:U{ws.max_row}', formatting.rule.CellIsRule(operator='notEqual', formula=[0], fill=error_color))
-
 
 
     """    PUBLIC METHODS    """
@@ -1643,74 +1642,6 @@ class BillingManager():
         if not billing_profile_id and job_id:
             raise Exception(f"Billing Profile for Job {job_id} non trovato")
         return billing_profile_id
-
-    def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
-        billed_hours = {}
-
-        ####### unic sheet
-        if not bill_by_job:
-            for w in hours:
-                billed_hours[w] = {}
-                w_hours = hours[w]
-                w_jobs = jobs[w]
-                w_billing_profiles = billing_profiles[w]
-
-                for day in w_hours:
-                    day_job = w_jobs[day]
-                    day_billing_profile_id = w_billing_profiles[day]
-                    day_billing_profile = self.get_billing_profile_obj(day_billing_profile_id)
-
-                    # if worker worked that day bill it, else append 0 values
-                    if day_job:
-                        billed_hours[w][day] = self.__apply_billing_profile(w_hours[day], day_billing_profile)
-                    else:
-                        billed_hours[w][day] = w_hours[day]
-
-            new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=False)
-            new_hours_data, total_hours = self.parse_total(hours, divided_by_job=False)
-            self.create_Excel(new_hours_data, total_billing, bill_by_job=bill_by_job)
-
-        #### a sheet for every job
-        elif bill_by_job:
-            hours_by_job = {}
-            for w in jobs:
-                if w != "job_total":
-                    for day in jobs[w]:
-                        current_job = jobs[w][day]
-                        if current_job:
-                            current_job = self.get_jobname(current_job)
-                            if current_job not in hours_by_job:
-                                hours_by_job[current_job] = {}
-                            if w not in hours_by_job[current_job]:
-                                hours_by_job[current_job][w] = {}
-                            hours_by_job[current_job][w][day] = hours[w][day]
-
-            for job in hours_by_job:
-                billed_hours[job] = {}
-                for w in hours_by_job[job]:
-                    if w != "job_total":
-                        billed_hours[job][w] = {}
-                        for day in hours_by_job[job][w]:
-                            billed_hours[job][w][day] = self.__apply_billing_profile(hours_by_job[job][w][day],self.get_billing_profile_obj(billing_profiles[w][day]))
-
-            new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=True)
-            new_hours_data, total_hours = self.parse_total(hours_by_job, divided_by_job=True)
-            self.create_Excel(new_hours_data, new_billed_hours, bill_by_job=bill_by_job)
-
-        # conditional dump values
-        if dump_detailed:
-            with open("DETAIL_ore_lavoratori.json", "w") as f:
-                f.write(json.dumps(hours, indent=4, ensure_ascii=True))
-            with open("DETAIL_valori_da_fatturare.json", "w") as f:
-                f.write(json.dumps(billed_hours, indent=4, ensure_ascii=True))
-
-        if dump_values:
-            with open("ore_lavoratori.json", "w") as f:
-                f.write(json.dumps(new_hours_data, indent=4, ensure_ascii=True))
-            with open("valori_da_fatturare.json", "w") as f:
-                f.write(json.dumps(new_billed_hours, indent=4, ensure_ascii=True))
-
-        print(">> Billed Successfully")
 
     def parse_total(self, data, divided_by_job=False):
         """
@@ -1830,6 +1761,69 @@ class BillingManager():
                 break
 
 
+    def new_bill(self, model_path, profile_to_bill):
+
+        BILLING_MODEL = openpyxl.load_workbook(model_path) # file to scan
+        bpi = profile_to_bill # "<id> <name>"
+        profile_obj = self.get_billing_profile_obj(bpi.split()[0]) # full_profile object
+        pricelist = profile_obj["pricelist"]
+
+        job_schema = ["client_id", "billing_profile_id", "job_id"]
+        hours_type = ["OR", "ST", "MN", "OF", "SF", "SN", "FN"]
+        grouped_by_job = {}
+
+        try:
+            ws = BILLING_MODEL["Report Fatturazione"]
+        except:
+            raise Exception("Non ho trovato il foglio 'Report Fatturazione' nel file excel!")
+
+        # GROUP BY JOB
+        active_name = None
+        for row in ws.iter_rows(max_row=ws.max_row, max_col=ws.max_column):
+            name = row[0].value
+
+            if name:
+                #print(name)
+                if name.upper() == name:
+                    continue
+                active_name = name
+            if not name:
+                name = active_name
+
+            to_parse = [cell.value for cell in row[9:-2]] # get info from column J to column S
+            job_info = to_parse[0:3] # cliente, profilo, mansione
+            hours_info = to_parse[3:] # OR, ST, MN, OF, SF, SN, FN
+            job_info = dict(zip(job_schema, job_info))
+            hours_info = dict(zip(hours_type, hours_info))
+
+            #print(job_info, hours_info)
+
+            if job_info["billing_profile_id"] == bpi:
+
+                if job_info["job_id"] not in grouped_by_job:
+                    grouped_by_job[job_info["job_id"]] = {}
+
+                if name not in grouped_by_job[job_info["job_id"]]:
+                    grouped_by_job[job_info["job_id"]][name] = hours_info
+
+        ############################ WRITE EXCEL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     # probably will be deleted
     def parse_jobs_to_profiles(self, workers_jobs):
@@ -1843,3 +1837,71 @@ class BillingManager():
                 else:
                     workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
         return workers_billing_profiles
+
+    def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
+        billed_hours = {}
+
+        ####### unic sheet
+        if not bill_by_job:
+            for w in hours:
+                billed_hours[w] = {}
+                w_hours = hours[w]
+                w_jobs = jobs[w]
+                w_billing_profiles = billing_profiles[w]
+
+                for day in w_hours:
+                    day_job = w_jobs[day]
+                    day_billing_profile_id = w_billing_profiles[day]
+                    day_billing_profile = self.get_billing_profile_obj(day_billing_profile_id)
+
+                    # if worker worked that day bill it, else append 0 values
+                    if day_job:
+                        billed_hours[w][day] = self.__apply_billing_profile(w_hours[day], day_billing_profile)
+                    else:
+                        billed_hours[w][day] = w_hours[day]
+
+            new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=False)
+            new_hours_data, total_hours = self.parse_total(hours, divided_by_job=False)
+            self.create_Excel(new_hours_data, total_billing, bill_by_job=bill_by_job)
+
+        #### a sheet for every job
+        elif bill_by_job:
+            hours_by_job = {}
+            for w in jobs:
+                if w != "job_total":
+                    for day in jobs[w]:
+                        current_job = jobs[w][day]
+                        if current_job:
+                            current_job = self.get_jobname(current_job)
+                            if current_job not in hours_by_job:
+                                hours_by_job[current_job] = {}
+                            if w not in hours_by_job[current_job]:
+                                hours_by_job[current_job][w] = {}
+                            hours_by_job[current_job][w][day] = hours[w][day]
+
+            for job in hours_by_job:
+                billed_hours[job] = {}
+                for w in hours_by_job[job]:
+                    if w != "job_total":
+                        billed_hours[job][w] = {}
+                        for day in hours_by_job[job][w]:
+                            billed_hours[job][w][day] = self.__apply_billing_profile(hours_by_job[job][w][day],self.get_billing_profile_obj(billing_profiles[w][day]))
+
+            new_billed_hours, total_billing = self.parse_total(billed_hours, divided_by_job=True)
+            new_hours_data, total_hours = self.parse_total(hours_by_job, divided_by_job=True)
+            self.create_Excel(new_hours_data, new_billed_hours, bill_by_job=bill_by_job)
+
+        # conditional dump values
+        if dump_detailed:
+            with open("DETAIL_ore_lavoratori.json", "w") as f:
+                f.write(json.dumps(hours, indent=4, ensure_ascii=True))
+            with open("DETAIL_valori_da_fatturare.json", "w") as f:
+                f.write(json.dumps(billed_hours, indent=4, ensure_ascii=True))
+
+        if dump_values:
+            with open("ore_lavoratori.json", "w") as f:
+                f.write(json.dumps(new_hours_data, indent=4, ensure_ascii=True))
+            with open("valori_da_fatturare.json", "w") as f:
+                f.write(json.dumps(new_billed_hours, indent=4, ensure_ascii=True))
+
+        print(">> Billed Successfully")
