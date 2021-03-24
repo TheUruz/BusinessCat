@@ -1617,6 +1617,14 @@ class BillingManager():
             name = f"Job {job_id} non trovato"
         return name
 
+    def get_client_object(self, client_id):
+        client = None
+        for c in self.clients:
+            if c["id"] == client_id:
+                client = c
+                break
+        return client
+
     def get_billing_profile_obj(self, billing_profile_id):
         billing_profile = None
         for profile in self.billing_profiles:

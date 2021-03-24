@@ -1419,7 +1419,7 @@ class Billing_Landing_Window(Billing_template):
 
         self.create_model_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA MODELLO", font=("Calibri", 10, "bold"), command=self.__insert_model_data)
         self.create_model_btn.grid(column=0, row=2, pady=self.margin, padx=5)
-        self.bill_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"), state="disabled")
+        self.bill_btn = Button(self.BUTTONS_FRAME, width=20, text="CREA FATTURA", font=("Calibri", 10, "bold"), command=self.__insert_billing_data)
         self.bill_btn.grid(column=2, row=2, pady=self.margin, padx=5)
 
         #resize grid
@@ -1444,7 +1444,6 @@ class Billing_Landing_Window(Billing_template):
         pady = 10
         padx = 10
 
-        # packing stuff in window
         Button(window, text="File Cartellini", bg=appLib.default_background, command=lambda: set_badges_path(self)).grid(row=0, column=0, pady=pady, padx=padx)
         badges_entry = Entry(window, state="disabled", disabledbackground=appLib.color_light_orange)
         badges_entry.grid(row=0, column=1, pady=pady, padx=padx, sticky="nsew")
@@ -1470,6 +1469,10 @@ class Billing_Landing_Window(Billing_template):
 
         Button(window, text="Genera modello", bg=appLib.default_background, command=lambda:generate_model(self)).grid(row=3, column=0, columnspan=2, pady=pady, padx=padx, sticky="nsew")
 
+        # setting minsize
+        window.update()
+        window.minsize(window.winfo_width(), window.winfo_height())
+
         def set_badges_path(self):
             filename = filedialog.askopenfilename(initialdir=os.getcwd(), title="Seleziona i Cartellini", filetype=[("Excel File", "*.xlsx*"), ("Excel File", "*.xls*")])
             if not filename:
@@ -1491,9 +1494,63 @@ class Billing_Landing_Window(Billing_template):
                     messagebox.showerror("ERRORE", "Dati mancanti")
             except Exception as e:
                 messagebox.showerror("ERRORE", f"{e}")
+                raise
 
         window.lift()
         window.grab_set()
+
+    def __insert_billing_data(self):
+        window = Toplevel(self)
+        window.resizable(height=False, width=True)
+        window.title("Inserimento Dati")
+        window.iconbitmap(appLib.icon_path)
+
+        x = self.winfo_x() + 80
+        y = self.winfo_y() + 25
+        window.geometry(f"+{x}+{y}")
+
+
+        pady = 10
+        padx = 10
+
+        TOP_CONTAINER = Frame(window, bg=appLib.color_orange)
+        TOP_CONTAINER.pack(fill="both", expand=True)
+        TOP_CONTAINER.grid_columnconfigure(0, minsize=200)
+        TOP_CONTAINER.grid_columnconfigure(1, minsize=350, weight=1)
+
+        Button(TOP_CONTAINER, text="Importa Modello Fatturazione", font=("Calibri", 10, "bold")).grid(row=0, column=0, padx=padx, pady=pady)
+        model_path_txtbox = Entry(TOP_CONTAINER, disabledbackground=appLib.color_light_orange, state="disabled")
+        model_path_txtbox.grid(row=0, column=1, padx=padx, pady=pady, sticky="ew")
+
+        Label(TOP_CONTAINER, text="Mese", bg=appLib.color_orange, font=("Calibri", 10, "bold")).grid(row=1, column=0, padx=padx, pady=pady)
+        month_combobox = ttk.Combobox(TOP_CONTAINER, values=[x for x in range(1,13)])
+        month_combobox.grid(row=1, column=1, padx=padx, pady=pady, sticky="ew")
+
+        Label(TOP_CONTAINER, text="Anno", bg=appLib.color_orange, font=("Calibri", 10, "bold")).grid(row=2, column=0, padx=padx, pady=pady)
+        current_year = datetime.datetime.now().year
+        year_combobox = ttk.Combobox(TOP_CONTAINER, values=[x for x in range(current_year, current_year+3)])
+        year_combobox.grid(row=2, column=1, padx=padx, pady=pady, sticky="ew")
+
+        # Seperator object
+        sep = ttk.Separator(window, orient='horizontal')
+        sep.pack(fill="x")
+
+        BOTTOM_CONTAINER = Frame(window, bg=appLib.color_orange)
+        BOTTOM_CONTAINER.pack(fill="both", expand=True)
+        BOTTOM_CONTAINER.grid_columnconfigure(0, minsize=200)
+        BOTTOM_CONTAINER.grid_columnconfigure(1, minsize=350, weight=1)
+
+        Label(BOTTOM_CONTAINER, text="Profilo da fatturare", bg=appLib.color_orange, font=("Calibri", 10, "bold")).grid(row=0, column=0,padx=padx,pady=pady, sticky="nsew")
+        billing_profile_combobox = ttk.Combobox(BOTTOM_CONTAINER, values=[f"{x['id']} {x['name']}" for x in self.Biller.billing_profiles])
+        billing_profile_combobox.grid(row=0, column=1, padx=padx, pady=pady, sticky="ew")
+
+        Button(BOTTOM_CONTAINER, text="Fattura", width=50, font=("Calibri", 10, "bold")).grid(row=1, column=0, columnspan=2, padx=padx, pady=pady*2)
+
+
+        # setting minsize
+        window.update()
+        window.minsize(window.winfo_width(), window.winfo_height())
+
 
 class Edit_Jobs_Window(Billing_template):
     def __init__(self, master=None):
@@ -1998,6 +2055,8 @@ class Edit_Profiles_Window(Billing_template):
             if isinstance(child, Label):
                 if child.cget("text") != "pricelist":
                     keys.append(child.cget("text"))
+            elif isinstance(child, ttk.Combobox):
+                values.append(self.cmb_var.get().split(" ")[0])
             elif isinstance(child, Entry):
                 values.append(child.get().strip())
         new_profile = dict(zip(keys, values))
@@ -2111,8 +2170,56 @@ class Edit_Profiles_Window(Billing_template):
                 key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
                 key.grid(row=i, column=0, pady=default_pady, padx=padx, sticky="nsew")
 
-                # not array values are packed as label(key) entry(value)
-                if not isinstance(v, list):
+
+                if k == "client":
+                    profile = self.Biller.get_client_object(v)
+                    display_name = f"{profile['id']} {profile['name']}" if profile else ""
+                    self.cmb_var = StringVar()
+                    self.client_combobox = ttk.Combobox(self.JSON_CONTAINER,textvariable=self.cmb_var, state="readonly")
+                    self.client_combobox['values'] = [f'{x["id"]} {x["name"]}' for x in self.Biller.clients]
+                    self.client_combobox.grid(row=i, column=1, pady=(2, 1), padx=padx, sticky="ew")
+                    self.client_combobox.bind('<Map>', lambda event: self.cmb_var.set(display_name))
+
+                elif k == "pricelist":
+                    i1 = 1
+                    self.PRICELIST_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=300, height=240, bg=appLib.color_orange)
+                    self.PRICELIST_FRAME_MASTER.grid(row=i, column=1, padx=padx, pady=default_pady, sticky="nsw")
+                    if not v:
+                        self.PRICELIST_FRAME_MASTER.grid(sticky="w")
+                    self.PRICELIST_FRAME_MASTER.pack_propagate(0)
+
+                    self.PRICELIST_CANVAS = Canvas(self.PRICELIST_FRAME_MASTER, bg=appLib.color_green)
+                    self.PRICELIST_CANVAS.pack(side="left", fill="both", expand=True)
+                    self.PRICELIST_CANVAS.bind("<Configure>", lambda e: self.PRICELIST_CANVAS.configure(scrollregion=self.PRICELIST_CANVAS.bbox("all")))
+
+                    self.PRICELIST_FRAME = Frame(self.PRICELIST_FRAME_MASTER, bg=appLib.color_orange)
+
+                    for index, value in enumerate(v):
+                        subframe = Frame(self.PRICELIST_FRAME, bg=appLib.default_background)
+                        subframe.pack(anchor="w", fill="x", pady=default_pady, padx=padx)
+
+                        i2 = 0
+                        for k1, v1 in value.items():
+                            Label(subframe, text=k1, bg=appLib.default_background).grid(row=i2, column=0, pady=default_pady, padx=padx, sticky="w")
+                            value = Entry(subframe, bg=appLib.default_background)
+                            value.grid(row=i2, column=1, pady=default_pady, padx=padx, sticky="nsew")
+                            value.insert(0, v1)
+                            # disable field conditionally
+                            if k1 in self.Biller.untouchable_keys:
+                                value.configure(state="disabled")
+                            i2 += 1
+
+                        subframe.grid_columnconfigure(1, weight=1)
+
+                        i1 += 1
+                    i += 1
+
+                    self.PRICELIST_YSCROLL = Scrollbar(self.PRICELIST_CANVAS, orient="vertical", width=18, command=self.PRICELIST_CANVAS.yview)
+                    self.PRICELIST_YSCROLL.pack(side="right", fill="y", expand=False)
+                    self.PRICELIST_CANVAS.configure(yscrollcommand=self.PRICELIST_YSCROLL.set)
+                    self.PRICELIST_CANVAS.create_window((0, 0), width=280, window=self.PRICELIST_FRAME, anchor="nw")
+
+                else:
                     value = Entry(self.JSON_CONTAINER, width=txt_box_size, bg=appLib.default_background)
                     value.grid(row=i, column=1, pady=default_pady, padx=padx, sticky="nsw")
                     value.insert(0, v)
@@ -2121,51 +2228,7 @@ class Edit_Profiles_Window(Billing_template):
                     if k in self.Biller.untouchable_keys:
                         value.config(state=DISABLED)
 
-                    i += 1
-
-                # array values are packed as label(key) scrollable frame(value)
-                else:
-                    key = Label(self.JSON_CONTAINER, text=k, bg=appLib.color_light_orange)
-                    key.grid(row=i, column=0, pady=default_pady, padx=padx, sticky="nsew")
-                    i1 = 1
-
-                    if k == "pricelist":
-                        self.PRICELIST_FRAME_MASTER = Frame(self.JSON_CONTAINER, width=300, height=240, bg=appLib.color_orange)
-                        self.PRICELIST_FRAME_MASTER.grid(row=i, column=1, padx=padx, pady=default_pady, sticky="nsw")
-                        if not v:
-                            self.PRICELIST_FRAME_MASTER.grid(sticky="w")
-                        self.PRICELIST_FRAME_MASTER.pack_propagate(0)
-
-                        self.PRICELIST_CANVAS = Canvas(self.PRICELIST_FRAME_MASTER, bg=appLib.color_green)
-                        self.PRICELIST_CANVAS.pack(side="left", fill="both", expand=True)
-                        self.PRICELIST_CANVAS.bind("<Configure>", lambda e: self.PRICELIST_CANVAS.configure(scrollregion=self.PRICELIST_CANVAS.bbox("all")))
-
-                        self.PRICELIST_FRAME = Frame(self.PRICELIST_FRAME_MASTER, bg=appLib.color_orange)
-
-                        for index, value in enumerate(v):
-                            subframe = Frame(self.PRICELIST_FRAME, bg=appLib.default_background)
-                            subframe.pack(anchor="w", fill="x", pady=default_pady, padx=padx)
-
-                            i2 = 0
-                            for k1, v1 in value.items():
-                                Label(subframe, text=k1, bg=appLib.default_background).grid(row=i2, column=0, pady=default_pady, padx=padx, sticky="w")
-                                value = Entry(subframe, bg=appLib.default_background)
-                                value.grid(row=i2, column=1, pady=default_pady, padx=padx, sticky="nsew")
-                                value.insert(0, v1)
-                                # disable field conditionally
-                                if k1 in self.Biller.untouchable_keys:
-                                    value.configure(state="disabled")
-                                i2 += 1
-
-                            subframe.grid_columnconfigure(1, weight=1)
-
-                            i1 += 1
-                        i += 1
-
-                        self.PRICELIST_YSCROLL = Scrollbar(self.PRICELIST_CANVAS, orient="vertical", width=18, command=self.PRICELIST_CANVAS.yview)
-                        self.PRICELIST_YSCROLL.pack(side="right", fill="y", expand=False)
-                        self.PRICELIST_CANVAS.configure(yscrollcommand=self.PRICELIST_YSCROLL.set)
-                        self.PRICELIST_CANVAS.create_window((0, 0), width=280, window=self.PRICELIST_FRAME, anchor="nw")
+                i += 1
 
 
             # define displayed data scrollbar
