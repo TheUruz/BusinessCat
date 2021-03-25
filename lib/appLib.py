@@ -917,7 +917,7 @@ class PaycheckController():
         return problems
 
 class BillingManager():
-    def __init__(self, bill_name="Fattura", month=datetime.datetime.now().month, year=datetime.datetime.now().year):
+    def __init__(self, bill_name="Fattura"):
         self.bill_name = f"{bill_name}.xlsx"
         self.badges_path = None # badges_path
         self.regex_day_pattern = "([1-9]|[12]\d|3[01])[LMGVSF]"
@@ -1768,6 +1768,17 @@ class BillingManager():
         profile_obj = self.get_billing_profile_obj(bpi.split()[0]) # full_profile object
         pricelist = profile_obj["pricelist"]
 
+        ### styles
+        rows_between_jobs = 4
+        job_font = openpyxl.styles.Font(bold=True, size=24)
+        header_font = openpyxl.styles.Font(bold=True)
+        footer_fill = openpyxl.styles.PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
+
+        try:
+            bill_name = f"Fattura {bpi.split()[1]} {self.billing_month}-{self.billing_year}.xlsx"
+        except:
+            bill_name = self.bill_name
+
         job_schema = ["client_id", "billing_profile_id", "job_id"]
         hours_type = ["OR", "ST", "MN", "OF", "SF", "SN", "FN"]
         grouped_by_job = {}
@@ -1806,13 +1817,100 @@ class BillingManager():
                 if name not in grouped_by_job[job_info["job_id"]]:
                     grouped_by_job[job_info["job_id"]][name] = hours_info
 
-        ############################ WRITE EXCEL
 
+        # WRITE BILL
+        title_ = bpi.split(" ", 1)[1]
+        wb = openpyxl.Workbook()
+        wb.remove_sheet(wb.get_sheet_by_name("Sheet")) # remove default sheet
+        wb.create_sheet(title_)
+        wb.save(bill_name)
 
+        row_ = 1
+        for job_ in grouped_by_job:
+            header_row = None
+            ws = wb[title_]
 
+            # get job df
+            df = pd.DataFrame.from_dict(grouped_by_job[job_]).T
+            df.index.rename("LAVORATORI", inplace=True)
+            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
+            df['TOTALE'] = df.sum(axis=1, numeric_only=True)
+            df.fillna(0.0, inplace=True)
 
+            # write job name
+            ws[f"A{row_}"].value = job_.split(" ", 1)[1]
+            ws[f"A{row_}"].font = job_font
+            row_ += 1
 
+            # save for reference
+            header_row = row_
 
+            # write headers
+            col_ = 1
+            ws[f"{get_column_letter(col_)}{header_row}"].value = df.index.name
+            ws[f"{get_column_letter(col_)}{header_row}"].font = header_font
+            col_ += 1
+            for colname in df.columns.values:
+                ws[f"{get_column_letter(col_)}{header_row}"].value = colname.upper()
+                ws[f"{get_column_letter(col_)}{header_row}"].font = header_font
+                col_ += 1
+            row_ += 1
+
+            # get lookup from headers
+            lookup = {}
+            for r in ws.iter_rows(min_row=header_row, max_row=header_row, max_col=ws.max_column):
+                lookup = dict(zip([val.value for index, val in enumerate(r)],[index for index, val in enumerate(r)]))
+                break
+
+            # write workers
+            for row in df.iterrows():
+                col_ = 1
+                worker = row[0]
+                w_hours = dict(row[1])
+
+                # per ogni intestazione inserisco il suo valore del lavoratore
+                for h_type in lookup:
+                    val_to_write = None
+                    if h_type == "LAVORATORI":
+                        val_to_write = worker
+                    elif h_type == "TOTALE":
+                        val_to_write = f"=SUM(B{row_}:H{row_})"
+                    else:
+                        try:
+                            val_to_write = w_hours[h_type]
+                        except KeyError:
+                            print(f"key {w_hours[h_type]} not found!")
+
+                    ws[f"{get_column_letter(col_)}{row_}"].value = val_to_write
+
+                    # check style last row
+                    if worker == ">> ORE TOTALI <<":
+                        ws[f"{get_column_letter(col_)}{row_}"].fill = footer_fill
+                        ws[f"{get_column_letter(col_)}{row_}"].font = header_font
+
+                    if col_ < ws.max_column:
+                        col_ += 1
+
+                # if last column and last row calculate billing hours for current job
+                if worker == ">> ORE TOTALI <<":
+                    billed_hours = dict(zip(lookup.keys(), [0.0 for entry in range(len(lookup.keys()))]))
+                    for r in ws.iter_rows(min_row=header_row+1, max_row=row_, max_col=ws.max_column):
+                        for h_type in lookup:
+                            if h_type != "LAVORATORI":
+                                if h_type != "TOTALE":
+                                    colNo = lookup[h_type]
+                                    to_sum = r[colNo].value
+                                    billed_hours[h_type] += to_sum
+                                else:
+                                    billed_hours[h_type] = f"=SUM(B{row_+1}:H{row_+1})"
+                    row_ += rows_between_jobs
+                else:
+                    row_ += 1
+
+        # adjust first column width
+        ws.column_dimensions[get_column_letter(1)].width = 40
+
+        wb.save(bill_name)
 
 
 
