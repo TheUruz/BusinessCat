@@ -1495,8 +1495,50 @@ class BillingManager():
 
         df.index.rename("LAVORATORI", inplace=True)
 
+
         ############### GENERATING EXCEL MODEL
         with pd.ExcelWriter(self.model_name, mode="w") as writer:
+
+            # create client, billing_profile, job lookup in a different sheet
+            check_sheet = "check_sheet"
+            check_ws = writer.book.create_sheet(check_sheet)
+            check_ws.title = check_sheet
+            vals_ = {
+                "clients": [f"{x['id']} {x['name']}" for x in self.clients],
+                "billing_profiles": [f"{x['id']} {x['name']}" for x in self.billing_profiles],
+                "jobs": [f"{x['id']} {x['name']}" for x in self.jobs]
+            }
+            col_ = 1
+            for key in vals_:
+                row_ = 1
+                for entry in vals_[key]:
+                    check_ws[f"{get_column_letter(col_)}{row_}"].value = entry
+                    row_ += 1
+                col_ += 1
+
+            # calculate check columns lenght
+            check_sheet_columns = {
+                "J":f'={check_sheet}!$A$1:$A$',
+                "K":f'={check_sheet}!$B$1:$B$',
+                "L":f'={check_sheet}!$C$1:$C$'
+            }
+
+            for i_, column in enumerate(check_ws.iter_cols(max_col=check_ws.max_column, max_row=check_ws.max_row)):
+                referral = list(check_sheet_columns.keys())[i_]
+                i_ += 1
+                column_lenght = 0
+                for cell in column:
+                    if not cell.value:
+                        break
+                    column_lenght += 1
+                if not column_lenght:
+                    column_lenght += 1
+                check_sheet_columns[referral] += str(column_lenght)
+
+            # hide check_sheet
+            check_ws.sheet_state = "hidden"
+
+            ######################################################################################## MAIN BILL
             df.to_excel(writer, sheet_name=sh_name, na_rep=0, float_format="%.2f")
             ws = writer.sheets[sh_name]
 
@@ -1554,18 +1596,13 @@ class BillingManager():
                     ws.column_dimensions[get_column_letter(index)].width = 15
 
             # adding comboboxes
-            validation_dict = {
-                "J" : ",".join([f"{x['id']} {x['name']}" for x in self.clients]),
-                "K" : ",".join([f"{x['id']} {x['name']}" for x in self.billing_profiles]),
-                "L" : ",".join([f"{x['id']} {x['name']}" for x in self.jobs])
-            }
             for col in COLUMNS_TO_STYLE:
                 try:
-                    dv = DataValidation(type="list", formula1=f'"{validation_dict[col]}"', allowBlank=True)
+                    dv = DataValidation(type="list", formula1=check_sheet_columns[col], allowBlank=True)
+                    ws.add_data_validation(dv)
+                    dv.add(f"{col}2:{col}{ws.max_row - 1}")
                 except KeyError:
                     raise KeyError(f"ERRORE: nessuna lista di controllo per le celle della colonna {col}")
-                ws.add_data_validation(dv)
-                dv.add(f"{col}2:{col}{ws.max_row-1}")
                 for cell in ws[f"{col}2:{col}{ws.max_row-1}"]:
                     cell[0].font = combobox_font
                     cell[0].fill = combobox_background
@@ -1593,6 +1630,196 @@ class BillingManager():
 
             # add conditional formatting
             ws.conditional_formatting.add(f'U2:U{ws.max_row}', formatting.rule.CellIsRule(operator='notEqual', formula=[0], fill=error_color))
+
+    def _bill(self, model_path, profile_to_bill):
+
+        BILLING_MODEL = openpyxl.load_workbook(model_path) # file to scan
+        bpi = profile_to_bill # "<id> <name>"
+        profile_obj = self.get_billing_profile_obj(bpi.split()[0]) # full_profile object
+        pricelist = profile_obj["pricelist"]
+
+        ### styles
+        rows_between_jobs = 4
+        job_font = openpyxl.styles.Font(bold=True, size=24)
+        job_border = Border(bottom=Side(border_style='thick', color='3385ff'))
+        header_font = openpyxl.styles.Font(bold=True)
+        footer_color = openpyxl.styles.PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
+
+        try:
+            bill_name = f"Fattura {bpi.split()[1]} {self.billing_month}-{self.billing_year}.xlsx"
+        except:
+            bill_name = self.bill_name
+
+        job_schema = ["client_id", "billing_profile_id", "job_id"]
+        hours_type = ["OR", "ST", "MN", "OF", "SF", "SN", "FN"]
+
+        try:
+            ws = BILLING_MODEL["Report Fatturazione"]
+        except:
+            raise Exception("Non ho trovato il foglio 'Report Fatturazione' nel file excel!")
+
+        # GROUP BY JOB
+        grouped_by_job = {}
+        active_name = None
+        for row in ws.iter_rows(max_row=ws.max_row, max_col=ws.max_column):
+            name = row[0].value
+
+            if name:
+                #print(name)
+                if name.upper() == name:
+                    continue
+                active_name = name
+            if not name:
+                name = active_name
+
+            to_parse = [cell.value for cell in row[9:-2]] # get info from column J to column S
+            job_info = to_parse[0:3] # cliente, profilo, mansione
+            hours_info = to_parse[3:] # OR, ST, MN, OF, SF, SN, FN
+            job_info = dict(zip(job_schema, job_info))
+            hours_info = dict(zip(hours_type, hours_info))
+
+
+            if job_info["billing_profile_id"] == bpi:
+
+                if job_info["job_id"] not in grouped_by_job:
+                    grouped_by_job[job_info["job_id"]] = {}
+
+                if name not in grouped_by_job[job_info["job_id"]]:
+                    grouped_by_job[job_info["job_id"]][name] = hours_info
+
+        if not grouped_by_job:
+            raise Exception("Il modello fornito non contiene lavoratori che abbiano svolto una mansione sotto quel profilo")
+
+        # WRITE BILL
+        title_ = bpi.split(" ", 1)[1]
+        wb = openpyxl.Workbook()
+        wb.remove_sheet(wb.get_sheet_by_name("Sheet")) # remove default sheet
+        wb.create_sheet(title_)
+        wb.save(bill_name)
+
+        row_ = 1
+        for job_ in grouped_by_job:
+            header_row = None
+            ws = wb[title_]
+
+            # get job df
+            df = pd.DataFrame.from_dict(grouped_by_job[job_]).T
+            df.index.rename("LAVORATORI", inplace=True)
+            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
+            df['TOTALE'] = df.sum(axis=1, numeric_only=True)
+            df.fillna(0.0, inplace=True)
+
+            # write job name
+            ws[f"A{row_}"].value = job_.split(" ", 1)[1]
+            ws[f"A{row_}"].font = job_font
+            for c_ in range(1,10):
+                ws[f"{get_column_letter(c_)}{row_}"].border = job_border
+            row_ += 1
+
+            # save for reference
+            header_row = row_
+
+            # write headers
+            col_ = 1
+            ws[f"{get_column_letter(col_)}{header_row}"].value = df.index.name
+            ws[f"{get_column_letter(col_)}{header_row}"].font = header_font
+            col_ += 1
+            for colname in df.columns.values:
+                ws[f"{get_column_letter(col_)}{header_row}"].value = colname.upper()
+                ws[f"{get_column_letter(col_)}{header_row}"].font = header_font
+                col_ += 1
+            row_ += 1
+
+            # get lookup from headers
+            lookup = {}
+            for r in ws.iter_rows(min_row=header_row, max_row=header_row, max_col=ws.max_column):
+                lookup = dict(zip([val.value for index, val in enumerate(r)],[index for index, val in enumerate(r)]))
+                break
+
+            # write workers
+            for row in df.iterrows():
+                col_ = 1
+                worker = row[0]
+                w_hours = dict(row[1])
+
+                # per ogni intestazione inserisco il suo valore del lavoratore
+                for h_type in lookup:
+                    val_to_write = None
+                    if h_type == "LAVORATORI":
+                        val_to_write = worker
+                    elif h_type == "TOTALE":
+                        val_to_write = f"=SUM(B{row_}:H{row_})"
+                    else:
+                        try:
+                            val_to_write = w_hours[h_type]
+                        except KeyError:
+                            print(f"key {w_hours[h_type]} not found!")
+
+                    ws[f"{get_column_letter(col_)}{row_}"].value = val_to_write
+
+                    # check style last row
+                    if worker == ">> ORE TOTALI <<":
+                        ws[f"{get_column_letter(col_)}{row_}"].fill = footer_color
+                        ws[f"{get_column_letter(col_)}{row_}"].font = header_font
+
+                    if col_ < ws.max_column:
+                        col_ += 1
+
+                # if last column and last row calculate billing hours for current job
+                if worker == ">> ORE TOTALI <<":
+                    billed_hours = dict(zip(lookup.keys(), [0.0 for entry in range(len(lookup.keys()))]))
+                    for r in ws.iter_rows(min_row=header_row+1, max_row=row_, max_col=ws.max_column):
+                        for h_type in lookup:
+                            if h_type != "LAVORATORI":
+                                if h_type != "TOTALE":
+                                    colNo = lookup[h_type]
+                                    to_sum = r[colNo].value
+                                    billed_hours[h_type] += to_sum
+                                else:
+                                    billed_hours[h_type] = f"=SUM(B{row_+1}:H{row_+1})"
+
+                    # move down a line
+                    row_ += 1
+
+                    # write billed hour row
+                    for h_type in billed_hours:
+                        colNo = lookup[h_type]
+                        colNo += 1
+                        if h_type == "LAVORATORI":
+                            val_to_write = ">> IMPONIBILE <<"
+                        else:
+
+                            # multiply value for its price in pricelist
+                            for p_ in pricelist:
+                                if p_["tag"] == h_type:
+                                    price_spec = p_
+                                    val_to_write = billed_hours[h_type]
+                                    val_to_write *= price_spec["price"]
+
+                        try:
+                            ws[f"{get_column_letter(colNo)}{row_}"].value = val_to_write
+                            ws[f"{get_column_letter(colNo)}{row_}"].font = header_font
+                            ws[f"{get_column_letter(colNo)}{row_}"].fill = footer_color
+                            ws[f"{get_column_letter(colNo)}{row_}"].number_format = '#,##0.00€'
+                        except:
+                            raise Exception(f"ERRORE: valori imponibili non calcolabili")
+
+
+                    row_ += rows_between_jobs
+                else:
+                    row_ += 1
+
+        # adjust columns width
+        for c_ in range(1,10):
+            # first column
+            if c_ == 1:
+                ws.column_dimensions[get_column_letter(c_)].width = 40
+            # next columns
+            else:
+                ws.column_dimensions[get_column_letter(c_)].width = 15
+        wb.save(bill_name)
+
+        return bill_name
 
 
     """    PUBLIC METHODS    """
@@ -1699,7 +1926,8 @@ class BillingManager():
                             total[hour_type] = 0.0
                         total[hour_type] += new_data[job][worker_][hour_type]
 
-                        new_data[job][worker_][hour_type] = self.__round_float(new_data[job][worker_][hour_type],decimal_pos=2)
+                        new_data[job][worker_][hour_type] = self.__round_float(new_data[job][worker_][hour_type],
+                                                                               decimal_pos=2)
                 new_data[job]["job_total"] = job_total
 
         # round values
@@ -1708,209 +1936,6 @@ class BillingManager():
 
         return (new_data, total)
 
-    def create_Excel(self, data, total_billing, transposed=True, bill_by_job=False):
-
-        for job in data:
-
-            total_ = data[job].pop("job_total") if bill_by_job else total_billing
-
-            # adjust to billing type
-            if bill_by_job:
-                df = pd.DataFrame.from_dict(data[job])
-            else:
-                job = "Report Fatturazione"
-                df = pd.DataFrame.from_dict(data)
-
-            if transposed:
-                df = df.T
-
-            # sort alphabetically rows and columns
-            df = df.sort_index()
-            df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
-
-            # add totals (rows total/column total)
-            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
-            if bill_by_job:
-                df.loc[">> € DA FATTURARE <<"] = total_
-            df['TOTALI'] = df.sum(axis=1, numeric_only=True)
-
-            # polish
-            df.index.rename("LAVORATORI", inplace=True)
-            df.replace(0, np.nan, inplace=True)
-
-            #generating excel with df data
-            mode = "a" if os.path.exists(self.bill_name) else "w"
-            with pd.ExcelWriter(self.bill_name, mode=mode) as writer:
-                df.to_excel(writer, sheet_name=job, na_rep=0, float_format="%.2f")
-                ws = writer.sheets[job]
-                footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
-
-                # color last rows
-                last_rows_to_style = 2 if bill_by_job else 1
-                added_rows = 2 if bill_by_job else 1
-                for row in range(last_rows_to_style, 0, -1):
-                    for cell in ws[f"{(len(df)+1+added_rows)-row}:{(len(df)+1+added_rows)-row}"]:
-                        cell.font = openpyxl.styles.Font(bold=True)
-                        cell.fill = footer_color
-
-                        if bill_by_job and row == last_rows_to_style:
-                            cell.number_format = '#,##0.00€'
-
-            # if single sheet result break
-            if not bill_by_job:
-                break
-
-
-    def new_bill(self, model_path, profile_to_bill):
-
-        BILLING_MODEL = openpyxl.load_workbook(model_path) # file to scan
-        bpi = profile_to_bill # "<id> <name>"
-        profile_obj = self.get_billing_profile_obj(bpi.split()[0]) # full_profile object
-        pricelist = profile_obj["pricelist"]
-
-        ### styles
-        rows_between_jobs = 4
-        job_font = openpyxl.styles.Font(bold=True, size=24)
-        header_font = openpyxl.styles.Font(bold=True)
-        footer_fill = openpyxl.styles.PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
-
-        try:
-            bill_name = f"Fattura {bpi.split()[1]} {self.billing_month}-{self.billing_year}.xlsx"
-        except:
-            bill_name = self.bill_name
-
-        job_schema = ["client_id", "billing_profile_id", "job_id"]
-        hours_type = ["OR", "ST", "MN", "OF", "SF", "SN", "FN"]
-        grouped_by_job = {}
-
-        try:
-            ws = BILLING_MODEL["Report Fatturazione"]
-        except:
-            raise Exception("Non ho trovato il foglio 'Report Fatturazione' nel file excel!")
-
-        # GROUP BY JOB
-        active_name = None
-        for row in ws.iter_rows(max_row=ws.max_row, max_col=ws.max_column):
-            name = row[0].value
-
-            if name:
-                #print(name)
-                if name.upper() == name:
-                    continue
-                active_name = name
-            if not name:
-                name = active_name
-
-            to_parse = [cell.value for cell in row[9:-2]] # get info from column J to column S
-            job_info = to_parse[0:3] # cliente, profilo, mansione
-            hours_info = to_parse[3:] # OR, ST, MN, OF, SF, SN, FN
-            job_info = dict(zip(job_schema, job_info))
-            hours_info = dict(zip(hours_type, hours_info))
-
-            #print(job_info, hours_info)
-
-            if job_info["billing_profile_id"] == bpi:
-
-                if job_info["job_id"] not in grouped_by_job:
-                    grouped_by_job[job_info["job_id"]] = {}
-
-                if name not in grouped_by_job[job_info["job_id"]]:
-                    grouped_by_job[job_info["job_id"]][name] = hours_info
-
-
-        # WRITE BILL
-        title_ = bpi.split(" ", 1)[1]
-        wb = openpyxl.Workbook()
-        wb.remove_sheet(wb.get_sheet_by_name("Sheet")) # remove default sheet
-        wb.create_sheet(title_)
-        wb.save(bill_name)
-
-        row_ = 1
-        for job_ in grouped_by_job:
-            header_row = None
-            ws = wb[title_]
-
-            # get job df
-            df = pd.DataFrame.from_dict(grouped_by_job[job_]).T
-            df.index.rename("LAVORATORI", inplace=True)
-            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
-            df['TOTALE'] = df.sum(axis=1, numeric_only=True)
-            df.fillna(0.0, inplace=True)
-
-            # write job name
-            ws[f"A{row_}"].value = job_.split(" ", 1)[1]
-            ws[f"A{row_}"].font = job_font
-            row_ += 1
-
-            # save for reference
-            header_row = row_
-
-            # write headers
-            col_ = 1
-            ws[f"{get_column_letter(col_)}{header_row}"].value = df.index.name
-            ws[f"{get_column_letter(col_)}{header_row}"].font = header_font
-            col_ += 1
-            for colname in df.columns.values:
-                ws[f"{get_column_letter(col_)}{header_row}"].value = colname.upper()
-                ws[f"{get_column_letter(col_)}{header_row}"].font = header_font
-                col_ += 1
-            row_ += 1
-
-            # get lookup from headers
-            lookup = {}
-            for r in ws.iter_rows(min_row=header_row, max_row=header_row, max_col=ws.max_column):
-                lookup = dict(zip([val.value for index, val in enumerate(r)],[index for index, val in enumerate(r)]))
-                break
-
-            # write workers
-            for row in df.iterrows():
-                col_ = 1
-                worker = row[0]
-                w_hours = dict(row[1])
-
-                # per ogni intestazione inserisco il suo valore del lavoratore
-                for h_type in lookup:
-                    val_to_write = None
-                    if h_type == "LAVORATORI":
-                        val_to_write = worker
-                    elif h_type == "TOTALE":
-                        val_to_write = f"=SUM(B{row_}:H{row_})"
-                    else:
-                        try:
-                            val_to_write = w_hours[h_type]
-                        except KeyError:
-                            print(f"key {w_hours[h_type]} not found!")
-
-                    ws[f"{get_column_letter(col_)}{row_}"].value = val_to_write
-
-                    # check style last row
-                    if worker == ">> ORE TOTALI <<":
-                        ws[f"{get_column_letter(col_)}{row_}"].fill = footer_fill
-                        ws[f"{get_column_letter(col_)}{row_}"].font = header_font
-
-                    if col_ < ws.max_column:
-                        col_ += 1
-
-                # if last column and last row calculate billing hours for current job
-                if worker == ">> ORE TOTALI <<":
-                    billed_hours = dict(zip(lookup.keys(), [0.0 for entry in range(len(lookup.keys()))]))
-                    for r in ws.iter_rows(min_row=header_row+1, max_row=row_, max_col=ws.max_column):
-                        for h_type in lookup:
-                            if h_type != "LAVORATORI":
-                                if h_type != "TOTALE":
-                                    colNo = lookup[h_type]
-                                    to_sum = r[colNo].value
-                                    billed_hours[h_type] += to_sum
-                                else:
-                                    billed_hours[h_type] = f"=SUM(B{row_+1}:H{row_+1})"
-                    row_ += rows_between_jobs
-                else:
-                    row_ += 1
-
-        # adjust first column width
-        ws.column_dimensions[get_column_letter(1)].width = 40
-
-        wb.save(bill_name)
 
 
 
@@ -1921,7 +1946,7 @@ class BillingManager():
 
 
 
-
+    '''
 
     # probably will be deleted
     def parse_jobs_to_profiles(self, workers_jobs):
@@ -1936,7 +1961,7 @@ class BillingManager():
                     workers_billing_profiles[w][day] = self.get_billing_profile_id(workers_jobs[w][day])
         return workers_billing_profiles
 
-    def bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
+    def _bill(self, hours, jobs, billing_profiles, bill_by_job=True, dump_values=False, dump_detailed=False):
         billed_hours = {}
 
         ####### unic sheet
@@ -2003,3 +2028,57 @@ class BillingManager():
                 f.write(json.dumps(new_billed_hours, indent=4, ensure_ascii=True))
 
         print(">> Billed Successfully")
+        
+    def create_Excel(self, data, total_billing, transposed=True, bill_by_job=False):
+
+        for job in data:
+
+            total_ = data[job].pop("job_total") if bill_by_job else total_billing
+
+            # adjust to billing type
+            if bill_by_job:
+                df = pd.DataFrame.from_dict(data[job])
+            else:
+                job = "Report Fatturazione"
+                df = pd.DataFrame.from_dict(data)
+
+            if transposed:
+                df = df.T
+
+            # sort alphabetically rows and columns
+            df = df.sort_index()
+            df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
+
+            # add totals (rows total/column total)
+            df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
+            if bill_by_job:
+                df.loc[">> € DA FATTURARE <<"] = total_
+            df['TOTALI'] = df.sum(axis=1, numeric_only=True)
+
+            # polish
+            df.index.rename("LAVORATORI", inplace=True)
+            df.replace(0, np.nan, inplace=True)
+
+            #generating excel with df data
+            mode = "a" if os.path.exists(self.bill_name) else "w"
+            with pd.ExcelWriter(self.bill_name, mode=mode) as writer:
+                df.to_excel(writer, sheet_name=job, na_rep=0, float_format="%.2f")
+                ws = writer.sheets[job]
+                footer_color = PatternFill(start_color="e6e6e6", end_color="e6e6e6", fill_type="solid")
+
+                # color last rows
+                last_rows_to_style = 2 if bill_by_job else 1
+                added_rows = 2 if bill_by_job else 1
+                for row in range(last_rows_to_style, 0, -1):
+                    for cell in ws[f"{(len(df)+1+added_rows)-row}:{(len(df)+1+added_rows)-row}"]:
+                        cell.font = openpyxl.styles.Font(bold=True)
+                        cell.fill = footer_color
+
+                        if bill_by_job and row == last_rows_to_style:
+                            cell.number_format = '#,##0.00€'
+
+            # if single sheet result break
+            if not bill_by_job:
+                break
+    
+    '''

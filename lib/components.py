@@ -1544,7 +1544,7 @@ class Billing_Landing_Window(Billing_template):
         billing_profile_combobox = ttk.Combobox(BOTTOM_CONTAINER, values=[f"{x['id']} {x['name']}" for x in self.Biller.billing_profiles], state="readonly")
         billing_profile_combobox.grid(row=0, column=1, padx=padx, pady=pady, sticky="ew")
 
-        Button(BOTTOM_CONTAINER, text="Fattura", width=50, font=("Calibri", 10, "bold"), command=lambda:make_bill()).grid(row=1, column=0, columnspan=2, padx=padx, pady=pady*2)
+        Button(BOTTOM_CONTAINER, text="GENERA FATTURA", width=50, font=("Calibri", 10, "bold"), command=lambda:make_bill()).grid(row=1, column=0, columnspan=2, padx=padx, pady=pady*2)
 
         # setting minsize
         window.update()
@@ -1570,14 +1570,13 @@ class Billing_Landing_Window(Billing_template):
                     return
 
                 self.Biller._set_billing_time(self.choosen_month.get(), self.choosen_year.get())
-                self.Biller.new_bill(model_path=model_path_txtbox.get(), profile_to_bill=billing_profile_combobox.get())
-                messagebox.showinfo("Successo", "Fattura con successo!")
+                filename = self.Biller._bill(model_path=model_path_txtbox.get(), profile_to_bill=billing_profile_combobox.get())
+                show_bill = messagebox.askyesno("Successo", "Fattura redatta, vuoi visualizzarla?")
+                if show_bill:
+                    os.system(f'"{filename}"')
 
             except Exception as e:
                 messagebox.showerror("ERRORE", f"{e}")
-
-
-
 
 class Edit_Jobs_Window(Billing_template):
     def __init__(self, master=None):
@@ -2310,7 +2309,7 @@ class Edit_Profiles_Window(Billing_template):
 
 
 
-
+'''
 class Billing_Window(Billing_template):
     def __init__(self, master=None):
         self.width = 500
@@ -2797,7 +2796,7 @@ class Billing_Window(Billing_template):
         # START BILL BUTTON
         self.start_bill_btn = Button(self.FLOW_FRAME, text="Fattura", state="disabled", command= self.__second_view)
         self.start_bill_btn.pack(side="bottom", fill="x", pady=default_pady*2, padx=default_padx*2)
-
+'''
 
 
 
