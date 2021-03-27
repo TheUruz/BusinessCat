@@ -1651,7 +1651,7 @@ class BillingManager():
             bill_name = self.bill_name
 
         job_schema = ["client_id", "billing_profile_id", "job_id"]
-        hours_type = ["OR", "ST", "MN", "OF", "SF", "SN", "FN"]
+        HOURS_TYPE = ["OR", "ST", "MN", "OF", "SF", "SN", "FN"]
 
         try:
             ws = BILLING_MODEL["Report Fatturazione"]
@@ -1665,7 +1665,6 @@ class BillingManager():
             name = row[0].value
 
             if name:
-                #print(name)
                 if name.upper() == name:
                     continue
                 active_name = name
@@ -1676,17 +1675,15 @@ class BillingManager():
             job_info = to_parse[0:3] # cliente, profilo, mansione
             hours_info = to_parse[3:] # OR, ST, MN, OF, SF, SN, FN
             job_info = dict(zip(job_schema, job_info))
-            hours_info = dict(zip(hours_type, hours_info))
-
+            hours_info = dict(zip(HOURS_TYPE, hours_info))
 
             if job_info["billing_profile_id"] == bpi:
-
                 if job_info["job_id"] not in grouped_by_job:
                     grouped_by_job[job_info["job_id"]] = {}
-
                 if name not in grouped_by_job[job_info["job_id"]]:
                     grouped_by_job[job_info["job_id"]][name] = hours_info
 
+        # check if model contains workers for the given billing profile
         if not grouped_by_job:
             raise Exception("Il modello fornito non contiene lavoratori che abbiano svolto una mansione sotto quel profilo")
 
@@ -1704,6 +1701,8 @@ class BillingManager():
 
             # get job df
             df = pd.DataFrame.from_dict(grouped_by_job[job_]).T
+            df = df.reindex(HOURS_TYPE, axis=1)
+            df.sort_index(inplace=True)
             df.index.rename("LAVORATORI", inplace=True)
             df.loc[">> ORE TOTALI <<"] = df.sum(axis=0, numeric_only=True)
             df['TOTALE'] = df.sum(axis=1, numeric_only=True)
@@ -1736,7 +1735,7 @@ class BillingManager():
                 lookup = dict(zip([val.value for index, val in enumerate(r)],[index for index, val in enumerate(r)]))
                 break
 
-            # write workers
+            # write workers and totals
             for row in df.iterrows():
                 col_ = 1
                 worker = row[0]
@@ -1765,18 +1764,19 @@ class BillingManager():
                     if col_ < ws.max_column:
                         col_ += 1
 
-                # if last column and last row calculate billing hours for current job
+                # if last row calculate billing hours for current job
                 if worker == ">> ORE TOTALI <<":
                     billed_hours = dict(zip(lookup.keys(), [0.0 for entry in range(len(lookup.keys()))]))
-                    for r in ws.iter_rows(min_row=header_row+1, max_row=row_, max_col=ws.max_column):
+                    for r in ws.iter_rows(min_row=row_, max_row=row_, max_col=ws.max_column): #header_row+1
                         for h_type in lookup:
-                            if h_type != "LAVORATORI":
-                                if h_type != "TOTALE":
-                                    colNo = lookup[h_type]
-                                    to_sum = r[colNo].value
-                                    billed_hours[h_type] += to_sum
-                                else:
-                                    billed_hours[h_type] = f"=SUM(B{row_+1}:H{row_+1})"
+                            if h_type == "LAVORATORI":
+                                billed_hours[h_type] = ">> IMPONIBILE <<"
+                            elif h_type == "TOTALE":
+                                billed_hours[h_type] = f"=SUM(B{row_+1}:H{row_+1})"
+                            else:
+                                colNo = lookup[h_type]
+                                to_sum = r[colNo].value
+                                billed_hours[h_type] += to_sum
 
                     # move down a line
                     row_ += 1
@@ -1785,25 +1785,30 @@ class BillingManager():
                     for h_type in billed_hours:
                         colNo = lookup[h_type]
                         colNo += 1
-                        if h_type == "LAVORATORI":
-                            val_to_write = ">> IMPONIBILE <<"
+                        if h_type in ["LAVORATORI", "TOTALE"]:
+                            val_to_write = billed_hours[h_type]
                         else:
+                            try:
+                                price = None
+                                # find price in pricelist
+                                for p_ in pricelist:
+                                    if p_["tag"] == h_type:
+                                        price = float(p_["price"])
+                                        break
 
-                            # multiply value for its price in pricelist
-                            for p_ in pricelist:
-                                if p_["tag"] == h_type:
-                                    price_spec = p_
-                                    val_to_write = billed_hours[h_type]
-                                    val_to_write *= price_spec["price"]
+                                if not price:
+                                    raise
 
-                        try:
-                            ws[f"{get_column_letter(colNo)}{row_}"].value = val_to_write
-                            ws[f"{get_column_letter(colNo)}{row_}"].font = header_font
-                            ws[f"{get_column_letter(colNo)}{row_}"].fill = footer_color
-                            ws[f"{get_column_letter(colNo)}{row_}"].number_format = '#,##0.00€'
-                        except:
-                            raise Exception(f"ERRORE: valori imponibili non calcolabili")
+                                # (formula) multiply h_type total for its price
+                                val_to_write = f"={get_column_letter(lookup[h_type]+1)}{row_-1}*{price}"
+                            except:
+                                raise Exception(f"ERRORE: valori imponibili non calcolabili")
 
+                        # style cell
+                        ws[f"{get_column_letter(colNo)}{row_}"].value = val_to_write
+                        ws[f"{get_column_letter(colNo)}{row_}"].font = header_font
+                        ws[f"{get_column_letter(colNo)}{row_}"].fill = footer_color
+                        ws[f"{get_column_letter(colNo)}{row_}"].number_format = '#,##0.00€'
 
                     row_ += rows_between_jobs
                 else:
