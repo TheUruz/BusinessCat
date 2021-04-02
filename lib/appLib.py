@@ -1646,7 +1646,7 @@ class BillingManager():
         footer_color = openpyxl.styles.PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
 
         try:
-            bill_name = f"Fattura {bpi.split()[1]} {self.billing_month}-{self.billing_year}.xlsx"
+            bill_name = f"Fattura {bpi.split()[1:]} {self.billing_month}-{self.billing_year}.xlsx"
         except:
             bill_name = self.bill_name
 
