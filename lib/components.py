@@ -2308,7 +2308,6 @@ class Edit_Profiles_Window(Billing_template):
 
 
 
-
 '''
 class Billing_Window(Billing_template):
     def __init__(self, master=None):
