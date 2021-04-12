@@ -1105,6 +1105,7 @@ class BillingManager():
 
     def __get_badge_name(self, sheet_obj):
         """get owner's name out of sheet"""
+
         engine = self.__get_engine()
         try:
             if engine == "openpyxl":
@@ -1113,7 +1114,10 @@ class BillingManager():
                 badge_name = sheet_obj.cell_value(int(self.name_cell[1:]) - 1, int(openpyxl.utils.cell.column_index_from_string(self.name_cell[0])) - 1)
             else:
                 raise
-            badge_name = " ".join(badge_name.split())
+            try:
+                badge_name = " ".join(badge_name.split())
+            except:
+                badge_name = None
             return badge_name
         except Exception as e:
             raise Exception(f"Cannot get_badge_name. Error: {e}")
@@ -1141,11 +1145,36 @@ class BillingManager():
         old_name = name.split(" ")
         new_name = ""
 
-        for index, word in enumerate(old_name):
-            if index < len(old_name):
-                new_name += (old_name[index][0].upper() + old_name[index][1:].lower() + " ")
-            else:
-                new_name += (old_name[index][0].upper() + old_name[index][1:].lower())
+        try:
+            for index, word in enumerate(old_name):
+                word = word.strip()
+                if word:
+                    if index < len(old_name):
+                        new_name += (word[0].upper() + word[1:].lower() + " ")
+                    else:
+                        new_name += (word[0].upper() + word[1:].lower())
+        except:
+            new_name = name[0].upper() + name[1:].lower()
+
+        return new_name
+
+    def __gp_column_renamer(self, name):
+
+        lookup_table = {
+            "Ore ORD": "OR",
+            "Ore STR": "ST",
+            "Ore NOTT": "MN",
+            "Ore FEST": "OF",
+            "Ore STR/FEST": "SF",
+            "Ore STR/NOTT": "SN",
+            "Ore FEST/NOTT": "FN"
+        }
+        new_name = None
+        if name in lookup_table:
+            new_name = lookup_table[name]
+
+        if not new_name:
+            new_name = name
 
         return new_name
 
@@ -1211,6 +1240,36 @@ class BillingManager():
 
         return priced_hours
 
+    def __get_gp_data(self, gp_xls):
+        wb = openpyxl.load_workbook(gp_xls)
+        ws = wb["Cartellino prova Query"]
+
+        # prendo i nomi di colonna dalla prima riga
+        columns = list(ws.iter_rows())[0]
+        columns = [c.value for c in columns]
+        columns = {k: v for k, v in enumerate(columns) if v}
+        total_w = []
+        w_obj = None
+        for row in list(ws.iter_rows())[1:-1]:
+            row_content = {k: v.value for k, v in enumerate(row) if k in columns}
+            if row_content[1] and str(row_content[1]).lower().startswith("somma"): continue
+            for x in row_content:
+                if row_content[x] == None:
+                    row_content[x] = 0
+
+            if row_content[0]:
+                if w_obj:
+                    total_w.append(w_obj)
+                w_obj = {}
+                for item in columns.items():
+                    w_obj[item[1]] = row_content[item[0]]
+            else:
+                for index in row_content:
+                    key = columns[index]
+                    if key != "Nome":
+                        w_obj[key] += row_content[index]
+        return total_w
+
 
     """     PROTECTED METHODS   """
     # must be called once before billing/creating model
@@ -1234,10 +1293,22 @@ class BillingManager():
         xlsx_data, sheet_names, engine = self.__load_Excel_badges()
         total_content = {}
 
+        not_valid_names = "ENTE: DIV.: GRP/FILIALE: REP:. Cognome Nome Codice"
+        not_valid_names = not_valid_names.split()
+
         for sheetNo, sheet in enumerate(sheet_names):
             sheet_data = xlsx_data[sheet] if engine == "openpyxl" else xlsx_data.get_sheet(sheetNo)
-            badge_name = self.__get_badge_name(sheet_data)
 
+            valid_name = False
+            incremented_by = 0
+            self.name_cell = "B5"
+            while not valid_name:
+                badge_name = self.__get_badge_name(sheet_data)
+                if badge_name and badge_name.split()[0] not in not_valid_names:
+                    valid_name = True
+                else:
+                    incremented_by += 1
+                    self.name_cell = f"B{int(self.name_cell[-1]) + 1}"
             if names:
                 if not badge_name in names:
                     continue
@@ -1245,7 +1316,7 @@ class BillingManager():
             total_content[badge_name] = {}
 
             # getting df, fixing columns, removing empty columns
-            df = pd.read_excel(xlsx_data, sheet_name=sheet, header=9, index_col=0, engine=engine)
+            df = pd.read_excel(xlsx_data, sheet_name=sheet, header=9 + incremented_by, index_col=0, engine=engine)
 
             # set columns
             df = self.__manage_columns(df)
@@ -1630,6 +1701,117 @@ class BillingManager():
 
             # add conditional formatting
             ws.conditional_formatting.add(f'U2:U{ws.max_row}', formatting.rule.CellIsRule(operator='notEqual', formula=[0], fill=error_color))
+
+    def _create_comparison(self, gp_filepath):
+        sh_name = "Comparazione"
+        footer_color = PatternFill(start_color=self.footer_color, end_color=self.footer_color, fill_type="solid")
+        error_color = PatternFill(start_color=color_red[1:], end_color=color_red[1:], fill_type="solid")
+        separator = Border(top=Side(border_style='thin', color="000000"))
+
+        # parse data from given excel
+        total_content = self._parse_badges()
+        total_content = self._parse_days(total_content)
+        totals = self.parse_total(total_content)
+        total_workers_hours = totals[0]
+
+        # get cartellini df
+        df = pd.DataFrame.from_dict(total_workers_hours).T
+        df.index.rename("LAVORATORI", inplace=True)
+        df = df.sort_index()
+        df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
+        df['TOTALI'] = df.sum(axis=1, numeric_only=True)
+
+        # get gp_df
+        gp_data = self.__get_gp_data(gp_filepath)
+        gp_df = pd.DataFrame.from_records(gp_data, index="Nome")
+        gp_df = gp_df.sort_index()
+        gp_df.rename(index=lambda x: self.__smart_renamer(x), inplace=True)
+        gp_df.rename(columns=lambda x: self.__gp_column_renamer(x), inplace=True)
+        gp_df['TOTALI'] = gp_df.sum(axis=1, numeric_only=True)
+        gp_df.index.rename("LAVORATORI", inplace=True)
+
+        # merge them
+        df = pd.concat([df, gp_df], axis=1)
+        df.index.rename("LAVORATORI", inplace=True)
+        df.fillna(0, inplace=True)
+
+        # adding "total" row
+        df.loc[">> ORE TOTALI <<"] = df.astype(float).sum(axis=0, numeric_only=True)
+        df = df.replace(0, "")
+
+
+        ############### GENERATING EXCEL MODEL
+        with pd.ExcelWriter("Comparazione.xlsx", mode="w") as writer:
+
+            df.to_excel(writer, sheet_name=sh_name, na_rep=0, float_format="%.2f")
+            ws = writer.sheets[sh_name]
+
+            # style last rows
+            last_rows_to_style = 1
+            added_rows = 1 # fixed, don't touch
+            for row in range(last_rows_to_style, 0, -1):
+                for cell in ws[f"{(len(df) + 1 + added_rows) - row}:{(len(df) + 1 + added_rows) - row}"]:
+                    cell.font = openpyxl.styles.Font(bold=True)
+                    cell.fill = footer_color
+
+            # set color, font weight, alignment of totals column
+            totals_columns = ["I", "R"]
+            for col_ in totals_columns:
+                for cell in ws[f"{col_}1:{col_}{ws.max_row}"]:
+                    cell[0].font = openpyxl.styles.Font(bold=True)
+                    cell[0].fill = footer_color
+                    cell[0].alignment = Alignment(horizontal="center")
+                    cell[0].number_format = '#,##0.00'
+
+            # adding formulas
+            for index, row in enumerate(ws.iter_rows()):
+                if index != 0 and index != 1 and index != ws.max_row:
+                    row_total_formula = f"=SUM(J{index}:Q{index})"
+                    ws[f"R{index}"] = row_total_formula
+                    ws[f"R{index}"].number_format = '#,##0.00'
+
+                try:
+                    if row[0].value and row[0].value.upper() != row[0].value:
+                        worker_total_formula = f"=I{index}-R{index}"
+                        ws[f"S{index}"] = worker_total_formula
+                        ws[f"S{index}"].number_format = '#,##0.00'
+                except AttributeError:
+                    pass
+
+            # adjust column width
+            for index, row in enumerate(ws.iter_cols()):
+                index +=1
+                if index == 1:
+                    ws.column_dimensions[get_column_letter(index)].width = 30
+                elif (index >=2 and index <=8) or (index >=10 and index <=17):
+                    ws.column_dimensions[get_column_letter(index)].width= 10
+                else:
+                    ws.column_dimensions[get_column_letter(index)].width = 15
+
+            # set border between workers
+            for row in ws.iter_rows(max_row=ws.max_row):
+                try:
+                    if row[0].value and row[0].value.upper() != row[0].value:
+                        for cell in row:
+                            # if already styled keep bottom style
+                            if cell.border.bottom.color is not None or cell.border.bottom.style is not None:
+                                temp_ = copy.deepcopy(separator)
+                                temp_.bottom.color = cell.border.bottom.color
+                                temp_.bottom.style = cell.border.bottom.style
+                                cell.border = temp_
+                                continue
+                            cell.border = separator
+                except AttributeError:
+                    pass
+
+            # freeze first column and row
+            ws.freeze_panes = ws["B2"]
+
+            # add conditional formatting
+            ws["S1"].value = "DIFFERENZA"
+            ws["S1"].font = openpyxl.styles.Font(bold=True)
+            ws["S1"].alignment = Alignment(horizontal='center')
+            ws.conditional_formatting.add(f'S2:S{ws.max_row}', formatting.rule.CellIsRule(operator='notEqual', formula=[0], fill=error_color))
 
     def _bill(self, model_path, profile_to_bill):
 
