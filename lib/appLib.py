@@ -262,6 +262,7 @@ class PaycheckController():
                 "col_codes": {},
                 "col_to_extract": [
                     "Z01100",
+                    "Z01160",
                     "Z00246",
                     "Z00255",
                     "Z01138",
@@ -312,6 +313,7 @@ class PaycheckController():
                 "merging_columns": {
                     "Ferie/fest. pagate": [
                         "Z01100",
+                        "Z01160",
                         "Z01138",
                         "Z00255",
                         "Z51010",
