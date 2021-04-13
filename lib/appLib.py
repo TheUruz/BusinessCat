@@ -1244,7 +1244,7 @@ class BillingManager():
 
     def __get_gp_data(self, gp_xls):
         wb = openpyxl.load_workbook(gp_xls)
-        ws = wb["Cartellino prova Query"]
+        ws = wb.worksheets[0]
 
         # prendo i nomi di colonna dalla prima riga
         columns = list(ws.iter_rows())[0]
