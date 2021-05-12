@@ -409,7 +409,6 @@ class PaycheckController():
 
         return True
 
-    # setters
     def set_badges_path(self, path):
         """setter for path to badges folder. it should contain .pdf files from every badge (splitted from BusinessCat)"""
         self.badges_path = path
@@ -497,6 +496,9 @@ class PaycheckController():
                         # parse netto del mese
                         if "NETTOsDELsMESE" in elem:
                             netto = blocks[index+1][-3]
+                            # alcune buste possono essere leggermente diverse, questo controllo ovvia alla cosa
+                            if str(netto).startswith("Perm"):
+                                netto = blocks[index+2][-3]
                             netto = netto.replace("€", "").strip().replace(",",".")
                             netto = netto.replace(".", "", (netto.count('.') - 1))
                             try:
