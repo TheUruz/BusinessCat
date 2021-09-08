@@ -17,3 +17,5 @@ config_files/imgs/paws/paw_7.png
 config_files/imgs/paws/paw_8.png
 config_files/imgs/paws/paw_9.png
 scrap.py
+test_data/
+config_files/

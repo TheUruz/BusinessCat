@@ -307,6 +307,7 @@ class PaycheckController():
                     "003411",
                     "000283",
                     "000031",
+                    "ZP0140",
                     "quota t.f.r.",
                     "quota t.f.r. a fondi"
                 ],
@@ -921,6 +922,7 @@ class PaycheckController():
         return problems
 
 class BillingManager():
+    """ classe non utilzzata """
     def __init__(self, bill_name="Fattura"):
         self.bill_name = f"{bill_name}.xlsx"
         self.badges_path = None # badges_path
