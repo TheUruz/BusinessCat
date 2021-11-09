@@ -271,7 +271,6 @@ class PaycheckController():
                     "ZP0160",
                     "ZP0162",
                     "ZPS000",
-                    "F02701",
                     "000282",
                     "003955",
                     "Z05031",
@@ -308,6 +307,8 @@ class PaycheckController():
                     "000283",
                     "000031",
                     "ZP0140",
+                    "ZP0144",
+                    "F02701",
                     "quota t.f.r.",
                     "quota t.f.r. a fondi"
                 ],
@@ -337,7 +338,9 @@ class PaycheckController():
                     ],
                     "Assegni Familiari": [
                         "ZP0160",
-                        "ZP0162"
+                        "ZP0162",
+                        "ZP0140",
+                        "ZP0144",
                     ]
                 }
             }
@@ -542,6 +545,7 @@ class PaycheckController():
                                     else:
                                         total_content[name][elem_colname] += val
 
+
         if create_Excel:
             sheet_name = "Verifica Buste Paga"
             self.create_Excel(total_content, sheet_name)
@@ -591,9 +595,22 @@ class PaycheckController():
                         day = b[4].split()
                         day, day_values_ = day[0], day[1:]
 
+                        # itera sui valori del giorno e controlla se sono stati letti correttamente dalla libreria POSSIBILE BUG IN CASO DI CODICI LUNGHI PIU DI 3 CARATTERI
+                        day_values = []
+                        for i, v_ in enumerate(day_values_):
+                            if len(v_) > 6: # maggiore di orari formattati così ###,##
+                                day_values.append(v_[0:2])
+                                day_values.append(v_[2:])
+                                i += 1
+                            else:
+                                day_values.append(v_)
+                            i += 1
+                        day_values_ = day_values
+
                         # check if data is valid
-                        if len(day[1:])%2 != 0 and day[1:][0].isdigit():
-                            raise Exception(f"Expected even pairs, got uneven pairs for worker {full_name} on day {day}")
+                        if len(day_values_) != 0 and day[1:][0].isdigit():
+                            if len(day_values_) % 2 != 0:
+                                raise Exception(f"Expected even pairs, got uneven pairs for worker {full_name} on day {day}")
 
                         day_values_ = list(zip(day_values_[0::2], day_values_[1::2]))
                         day_values = []
