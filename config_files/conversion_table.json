@@ -3663,6 +3663,22 @@
         "quota t.f.r. a fondi": {
             "Descrizione voce": "Quota T.F.R. a Fondi",
             "col_value": -1
+        },
+        "ZP0144": {
+            "Descrizione voce": "Arretrati maggiorazione ANF",
+            "col_value": -1
+        },
+        "ZP0140": {
+            "Descrizione voce": "Maggior.ANF art.5 DL 79/21",
+            "col_value": -1
+        },
+        "F02701": {
+            "Descrizione voce": "Trattamento integrativo L.21/2020",
+            "col_value": -1
+        },
+        "000278":{
+        	"Descrizione voce": "Indennita mulettista 1",
+        	"col_value": -1
         }
     },
     "col_to_extract": [
@@ -3712,6 +3728,8 @@
         "000283",
         "000031",
         "ZP0140",
+        "ZP0144",
+        "000278",
         "quota t.f.r.",
         "quota t.f.r. a fondi"
     ],
@@ -3740,7 +3758,9 @@
         ],
         "Assegni Familiari": [
             "ZP0160",
-            "ZP0162"
+            "ZP0162",
+            "ZP0144",
+            "ZP0140"
         ]
     }
 }

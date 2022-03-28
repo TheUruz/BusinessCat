@@ -97,14 +97,10 @@ def authenticate(func):
             with open('../config_files/google/token.pickle', 'rb') as token:
                 creds = pickle.load(token)
 
-        if not creds or not creds.valid:
-            # ? if token needs to be refreshed it will be refreshed
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            # ? otherwise authenticate
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(os.environ['GOOGLE_APPLICATION_CREDENTIALS'], SCOPE)
-                creds = flow.run_local_server(port=0)
+        # ? ask to login if token is not valid or is expired
+        if not creds or not creds.valid or creds.expired:
+            flow = InstalledAppFlow.from_client_secrets_file(os.environ['GOOGLE_APPLICATION_CREDENTIALS'], SCOPE)
+            creds = flow.run_local_server(port=0)
 
             with open('../config_files/google/token.pickle', 'wb') as token:
                 pickle.dump(creds, token)
@@ -310,7 +306,8 @@ class PaycheckController():
                     "ZP0144",
                     "F02701",
                     "quota t.f.r.",
-                    "quota t.f.r. a fondi"
+                    "quota t.f.r. a fondi",
+                    "000278"
                 ],
                 "merging_columns": {
                     "Ferie/fest. pagate": [
