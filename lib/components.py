@@ -350,8 +350,8 @@ class Home_Window(Custom_Toplevel):
         self.button3.pack(anchor="center", pady=self.buttons_y_padding)
 
         # Billing Manager button
-        self.button4 = Button(self.menu_frame, text="Billing Manager", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Billing_Landing_Window))
-        self.button4.pack(anchor="center", pady=self.buttons_y_padding)
+        #self.button4 = Button(self.menu_frame, text="Billing Manager", font=("Calibri", 10, "bold"), width=self.buttons_width, height=self.buttons_height, fg=appLib.color_orange, bg=self.menu_buttons_color, command=lambda:self.open_new_window(master, Billing_Landing_Window))
+        #self.button4.pack(anchor="center", pady=self.buttons_y_padding)
 
         # "Back to login" Label (packed only if app is using db)
         if master.using_db:
@@ -377,7 +377,7 @@ class Home_Window(Custom_Toplevel):
         self.credits_frame = Frame(self, width=396, height=20, bg=appLib.default_background)
         self.credits_frame.grid(row=1, column=1, sticky="s", padx=(1,1), pady=(0,1))
         self.credits_frame.pack_propagate(False)
-        self.credits_label = Label(self.credits_frame, text="Developed by CSI - Centro Servizi Industriali\tBRONI (PV) IT", font=("Calibri", 8, "bold"), bg=appLib.default_background)
+        self.credits_label = Label(self.credits_frame, text="Developed by FABIO MAGROTTI\temail: fabio.magrotti@gmail.com", font=("Calibri", 8, "bold"), bg=appLib.default_background)
         self.credits_label.pack(fill="y", anchor="w")
 
 class Splitter_Window(Custom_Toplevel):
