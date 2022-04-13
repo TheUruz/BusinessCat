@@ -34,7 +34,7 @@ from email.mime.text import MIMEText
 # PATHS
 db_config_path = "../config_files/db/config.json"
 email_config_path = "../config_files/email_service/config.json"
-google_config_path = "../config_files/google/google_userconfig.json"
+#google_config_path = "../config_files/google/google_userconfig.json"
 logo_path = "../config_files/imgs/BusinessCat.png"
 icon_path = "../config_files/imgs/Cat.ico"
 
@@ -92,21 +92,22 @@ def authenticate(func):
         global creds
         global SCOPE
 
-        # load token.pickle if present
-        if os.path.exists('../config_files/google/token.pickle'):
-            with open('../config_files/google/token.pickle', 'rb') as token:
-                creds = pickle.load(token)
+        try:
+            # load token.pickle if present
+            if os.path.exists('../config_files/google/token.pickle'):
+                with open('../config_files/google/token.pickle', 'rb') as token:
+                    creds = pickle.load(token)
 
-        # ? ask to login if token is not valid or is expired
-        if not creds or not creds.valid or creds.expired:
-            flow = InstalledAppFlow.from_client_secrets_file(os.environ['GOOGLE_APPLICATION_CREDENTIALS'], SCOPE)
-            creds = flow.run_local_server(port=0)
+            # ? ask to login if token is not valid or is expired
+            if not creds or not creds.valid or creds.expired:
+                flow = InstalledAppFlow.from_client_secrets_file(os.environ['GOOGLE_APPLICATION_CREDENTIALS'], SCOPE)
+                creds = flow.run_local_server(port=0)
 
-            with open('../config_files/google/token.pickle', 'wb') as token:
-                pickle.dump(creds, token)
+                with open('../config_files/google/token.pickle', 'wb') as token:
+                    pickle.dump(creds, token)
 
         # raise if user does not authenticate
-        if not creds:
+        except:
             raise Exception("You are not allowed to run this method >> Unauthorized")
 
         return func(*args, **kwargs)
@@ -312,7 +313,6 @@ class PaycheckController():
                 "merging_columns": {
                     "Ferie/fest. pagate": [
                         "Z01100",
-                        "Z01160",
                         "Z01138",
                         "Z00255",
                         "Z51010",
